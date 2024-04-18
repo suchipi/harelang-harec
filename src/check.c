@@ -88,12 +88,12 @@ handle_errors(struct errors *errors)
 }
 
 static void
-mkerror(const struct location loc, struct expression *expr)
+mkerror(struct expression *expr)
 {
 	expr->type = EXPR_LITERAL;
 	expr->result = &builtin_type_error;
 	expr->literal.uval = 0;
-	expr->loc = loc;
+	expr->loc = (struct location){0};
 }
 
 static void
@@ -119,7 +119,8 @@ error(struct context *ctx, struct location loc, struct expression *expr,
 		const char *fmt, ...)
 {
 	if (expr) {
-		mkerror(loc, expr);
+		mkerror(expr);
+		expr->loc = loc;
 	}
 	va_list ap;
 	va_start(ap, fmt);
@@ -237,7 +238,7 @@ check_expr_access(struct context *ctx,
 				aexpr->access.array->loc, expr->access.array->result);
 		atype = type_dealias(ctx, atype);
 		if (atype->storage == STORAGE_ERROR) {
-			mkerror(aexpr->access.array->loc, expr);
+			mkerror(expr);
 			return;
 		}
 		const struct type *itype =
@@ -290,7 +291,7 @@ check_expr_access(struct context *ctx,
 			aexpr->access._struct->loc, expr->access._struct->result);
 		stype = type_dealias(ctx, stype);
 		if (stype->storage == STORAGE_ERROR) {
-			mkerror(aexpr->access._struct->loc, expr);
+			mkerror(expr);
 			return;
 		}
 		if (stype->storage != STORAGE_STRUCT
@@ -318,7 +319,7 @@ check_expr_access(struct context *ctx,
 			aexpr->access.tuple->loc, expr->access.tuple->result);
 		ttype = type_dealias(ctx, ttype);
 		if (ttype->storage == STORAGE_ERROR) {
-			mkerror(aexpr->access.tuple->loc, expr);
+			mkerror(expr);
 			return;
 		}
 		if (ttype->storage != STORAGE_TUPLE) {
@@ -428,7 +429,7 @@ check_expr_alloc_slice(struct context *ctx,
 	// alloc(init, capacity) case
 	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, hint);
 	if (expr->alloc.init->result->storage == STORAGE_ERROR) {
-		mkerror(aexpr->alloc.init->loc, expr);
+		mkerror(expr);
 		return;
 	}
 
@@ -493,7 +494,7 @@ check_expr_alloc_copy(struct context *ctx,
 	// alloc(init...) case
 	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, hint);
 	if (expr->alloc.init->result->storage == STORAGE_ERROR) {
-		mkerror(aexpr->alloc.init->loc, expr);
+		mkerror(expr);
 		return;
 	}
 
@@ -561,7 +562,7 @@ check_expr_append_insert(struct context *ctx,
 	expr->append.object = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aexpr->append.object, expr->append.object, NULL);
 	if (expr->append.object->result->storage == STORAGE_ERROR) {
-		mkerror(aexpr->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	if (expr->append.object->type != EXPR_ACCESS) {
@@ -693,7 +694,7 @@ check_assert(struct context *ctx,
 		check_expression(ctx, e.cond, expr->assert.cond, &builtin_type_bool);
 		loc = e.cond->loc;
 		if (expr->assert.cond->result->storage == STORAGE_ERROR) {
-			mkerror(loc, expr);
+			mkerror(expr);
 			return;
 		}
 		if (type_dealias(ctx, expr->assert.cond->result)->storage != STORAGE_BOOL) {
@@ -1127,7 +1128,7 @@ check_expr_binarithm(struct context *ctx,
 	check_expression(ctx, aexpr->binarithm.rvalue, rvalue, NULL);
 	if (lvalue->result->storage == STORAGE_ERROR
 			|| rvalue->result->storage == STORAGE_ERROR) {
-		mkerror(aexpr->loc, expr);
+		mkerror(expr);
 		return;
 	}
 
@@ -1373,7 +1374,7 @@ check_expr_call(struct context *ctx,
 		aexpr->loc, lvalue->result);
 	fntype = type_dealias(ctx, fntype);
 	if (fntype->storage == STORAGE_ERROR) {
-		mkerror(aexpr->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	if (fntype->storage != STORAGE_FUNCTION) {
@@ -1491,7 +1492,7 @@ check_expr_cast(struct context *ctx,
 	const struct type *primary = type_dealias(ctx, expr->cast.value->result);
 	if (primary->storage == STORAGE_ERROR
 			|| secondary->storage == STORAGE_ERROR) {
-		mkerror(aexpr->cast.value->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	switch (aexpr->cast.kind) {
@@ -2253,7 +2254,7 @@ check_expr_free(struct context *ctx,
 
 	enum type_storage storage = type_dealias(ctx, expr->free.expr->result)->storage;
 	if (storage == STORAGE_ERROR) {
-		mkerror(aexpr->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	if (storage != STORAGE_SLICE
@@ -2312,7 +2313,7 @@ check_expr_if(struct context *ctx,
 	}
 
 	if (cond->result->storage == STORAGE_ERROR) {
-		mkerror(aexpr->match.value->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	if (type_dealias(ctx, cond->result)->storage != STORAGE_BOOL) {
@@ -2390,7 +2391,7 @@ check_expr_match(struct context *ctx,
 
 	const struct type *type = type_dealias(ctx, value->result);
 	if (type->storage == STORAGE_ERROR) {
-		mkerror(aexpr->match.value->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	bool is_tagged = type->storage == STORAGE_TAGGED;
@@ -2400,7 +2401,7 @@ check_expr_match(struct context *ctx,
 		is_nullable_ptr = (type->pointer.flags & PTR_NULLABLE) > 0;
 		ref_type = type_dealias(ctx, type->pointer.referent);
 		if (ref_type->storage == STORAGE_ERROR) {
-			mkerror(aexpr->match.value->loc, expr);
+			mkerror(expr);
 			return;
 		}
 		is_tagged_ptr = ref_type->storage == STORAGE_TAGGED;
@@ -2605,7 +2606,7 @@ check_expr_measure(struct context *ctx,
 	struct dimensions dim = type_store_lookup_dimensions(
 		ctx, aexpr->measure.type);
 	if (ctx->next != cur_err) {
-		mkerror(aexpr->measure.type->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	struct ast_types *next = ctx->unresolved;
@@ -2640,7 +2641,7 @@ check_expr_propagate(struct context *ctx,
 
 	const struct type *intype = lvalue->result;
 	if (intype->storage == STORAGE_ERROR) {
-		mkerror(aexpr->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	if (type_dealias(ctx, intype)->storage != STORAGE_TAGGED) {
@@ -2888,7 +2889,7 @@ check_expr_slice(struct context *ctx,
 	expr->slice.object = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aexpr->slice.object, expr->slice.object, NULL);
 	if (expr->slice.object->result->storage == STORAGE_ERROR) {
-		mkerror(aexpr->loc, expr);
+		mkerror(expr);
 		return;
 	}
 	const struct type *atype = check_autodereference(ctx,
@@ -3531,7 +3532,7 @@ check_expr_unarithm(struct context *ctx,
 	expr->unarithm.operand = operand;
 	expr->unarithm.op = aexpr->unarithm.op;
 	if (operand->result->storage == STORAGE_ERROR) {
-		mkerror(expr->unarithm.operand->loc, expr);
+		mkerror(expr);
 		return;
 	}
 
