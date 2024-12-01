@@ -1180,9 +1180,19 @@ type_store_lookup_slice(struct context *ctx, struct location loc,
 }
 
 const struct type *
-type_store_lookup_alias(struct context *ctx, const struct type *type)
+type_store_lookup_alias(struct context *ctx, const struct identifier *ident,
+	const struct identifier *name, const struct type *secondary, int flags,
+	bool exported)
 {
-	return type_store_lookup_type(ctx, type);
+	struct type type = {
+		.storage = STORAGE_ALIAS,
+		.flags = flags,
+		.alias.type = secondary,
+		.alias.exported = exported,
+	};
+	identifier_dup(&type.alias.name, name);
+	identifier_dup(&type.alias.ident, ident);
+	return type_store_lookup_type(ctx, &type);
 }
 
 

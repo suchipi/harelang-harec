@@ -4592,31 +4592,22 @@ resolve_type(struct context *ctx, struct incomplete_declaration *idecl)
 				identifier_unparse(&idecl->obj.name));
 	}
 
-	// 1. compute type dimensions
+	// compute type dimensions
 	struct errors **cur_err = ctx->next;
 	struct dimensions dim = type_store_lookup_dimensions(
 			ctx, idecl->decl.type.type);
 	idecl->in_progress = false;
 
-	// 2. compute type representation and store it
-	struct type _alias = {
-		.storage = STORAGE_ALIAS,
-		.alias = {
-			.ident = idecl->obj.ident,
-			.name = idecl->obj.name,
-			.type = NULL,
-			.exported = idecl->decl.exported,
-		},
-		.size = dim.size,
-		.align = dim.align,
-		.flags = idecl->decl.type.type->flags,
-	};
-
-	struct type *alias = (struct type *)type_store_lookup_alias(
-			ctx, &_alias);
+	// compute type representation and store it
+	struct type *alias = (struct type *)type_store_lookup_alias(ctx,
+			&idecl->obj.ident, &idecl->obj.name, NULL,
+			idecl->decl.type.type->flags, idecl->decl.exported);
 	idecl->obj.otype = O_TYPE;
 	idecl->obj.type = alias;
 	if (ctx->next == cur_err) {
+		alias->size = dim.size;
+		alias->align = dim.align;
+		alias->flags = idecl->decl.type.type->flags;
 		alias->alias.type = type_store_lookup_atype(
 			ctx, idecl->decl.type.type);
 	} else {
