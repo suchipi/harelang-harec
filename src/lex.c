@@ -255,7 +255,6 @@ wgetc(struct lexer *lexer, struct location *loc)
 static void
 clearbuf(struct lexer *lexer) {
 	lexer->buflen = 0;
-	lexer->buf[0] = 0;
 }
 
 static void
@@ -264,7 +263,7 @@ consume(struct lexer *lexer, size_t n)
 	for (size_t i = 0; i < n; i++) {
 		while ((lexer->buf[--lexer->buflen] & 0xC0) == 0x80) ;
 	}
-	lexer->buf[lexer->buflen] = 0;
+	assert(lexer->buflen < lexer->bufsz); // underflow check
 }
 
 static void
@@ -296,6 +295,7 @@ lex_name(struct lexer *lexer, struct token *out)
 		}
 	}
 
+	lexer->buf[lexer->buflen] = '\0'; // for cmp_keyword
 	void *token = bsearch(&lexer->buf, tokens, T_LAST_KEYWORD + 1,
 			sizeof(tokens[0]), cmp_keyword);
 	if (!token) {
@@ -450,6 +450,7 @@ want_int:
 	}
 	out->token = T_LITERAL;
 	lexer->require_int = false;
+	lexer->buf[lexer->buflen] = '\0';
 
 	enum kind {
 		UNKNOWN = -1,
