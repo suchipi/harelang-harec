@@ -167,6 +167,17 @@ lower_implicit_cast(struct context *ctx,
 static void resolve_decl(struct context *ctx,
 	struct incomplete_declaration *idecl);
 
+static const struct type *
+check_autodereference(struct context *ctx, struct location loc,
+		const struct type *type)
+{
+	const struct type *dtype = type_dereference(ctx, type, false);
+	if (dtype == NULL) {
+		error(ctx, loc, NULL, "Cannot autodereference a nullable pointer");
+	}
+	return type_dereference(ctx, type, true);
+}
+
 static void
 check_expr_access(struct context *ctx,
 	const struct ast_expression *aexpr,
@@ -222,13 +233,8 @@ check_expr_access(struct context *ctx,
 		expr->access.index = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, aexpr->access.array, expr->access.array, NULL);
 		check_expression(ctx, aexpr->access.index, expr->access.index, &builtin_type_size);
-		const struct type *atype =
-			type_dereference(ctx, expr->access.array->result);
-		if (!atype) {
-			error(ctx, aexpr->access.array->loc, expr,
-				"Cannot dereference nullable pointer for indexing");
-			return;
-		}
+		const struct type *atype = check_autodereference(ctx,
+				aexpr->access.array->loc, expr->access.array->result);
 		atype = type_dealias(ctx, atype);
 		if (atype->storage == STORAGE_ERROR) {
 			mkerror(aexpr->access.array->loc, expr);
@@ -280,13 +286,8 @@ check_expr_access(struct context *ctx,
 	case ACCESS_FIELD:
 		expr->access._struct = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, aexpr->access._struct, expr->access._struct, NULL);
-		const struct type *stype =
-			type_dereference(ctx, expr->access._struct->result);
-		if (!stype) {
-			error(ctx, aexpr->access._struct->loc, expr,
-				"Cannot dereference nullable pointer for field selection");
-			return;
-		}
+		const struct type *stype = check_autodereference(ctx,
+			aexpr->access._struct->loc, expr->access._struct->result);
 		stype = type_dealias(ctx, stype);
 		if (stype->storage == STORAGE_ERROR) {
 			mkerror(aexpr->access._struct->loc, expr);
@@ -313,13 +314,8 @@ check_expr_access(struct context *ctx,
 		check_expression(ctx, aexpr->access.value, value, NULL);
 		assert(value->type == EXPR_LITERAL);
 
-		const struct type *ttype =
-			type_dereference(ctx, expr->access.tuple->result);
-		if (!ttype) {
-			error(ctx, aexpr->access.tuple->loc, expr,
-				"Cannot dereference nullable pointer for value selection");
-			return;
-		}
+		const struct type *ttype = check_autodereference(ctx,
+			aexpr->access.tuple->loc, expr->access.tuple->result);
 		ttype = type_dealias(ctx, ttype);
 		if (ttype->storage == STORAGE_ERROR) {
 			mkerror(aexpr->access.tuple->loc, expr);
@@ -604,13 +600,7 @@ check_expr_append_insert(struct context *ctx,
 		error(ctx, aexpr->append.object->loc, expr,
 			"cannot %s to subject of for-each loop", exprtype_name);
 	}
-	sltype = type_dereference(ctx, sltypename);
-	if (!sltype) {
-		error(ctx, aexpr->append.object->loc, expr,
-			"Cannot dereference nullable pointer for %s expression",
-			exprtype_name);
-		return;
-	}
+	sltype = check_autodereference(ctx, aexpr->append.object->loc, sltypename);
 	sltype = type_dealias(ctx, sltype);
 
 	if (sltype->storage != STORAGE_SLICE) {
@@ -1379,12 +1369,8 @@ check_expr_call(struct context *ctx,
 	check_expression(ctx, aexpr->call.lvalue, lvalue, NULL);
 	expr->call.lvalue = lvalue;
 
-	const struct type *fntype = type_dereference(ctx, lvalue->result);
-	if (!fntype) {
-		error(ctx, aexpr->loc, expr,
-			"Cannot dereference nullable pointer type for function call");
-		return;
-	}
+	const struct type *fntype = check_autodereference(ctx,
+		aexpr->loc, lvalue->result);
 	fntype = type_dealias(ctx, fntype);
 	if (fntype->storage == STORAGE_ERROR) {
 		mkerror(aexpr->loc, expr);
@@ -1866,12 +1852,7 @@ check_expr_delete(struct context *ctx,
 			"Deleted expression must be slicing or indexing expression");
 		return;
 	}
-	otype = type_dereference(ctx, otype);
-	if (!otype) {
-		error(ctx, aexpr->loc, expr,
-			"Cannot dereference nullable pointer for delete expression");
-		return;
-	}
+	otype = check_autodereference(ctx, aexpr->loc, otype);
 	otype = type_dealias(ctx, otype);
 	if (otype->storage != STORAGE_SLICE) {
 		error(ctx, aexpr->delete.expr->loc, expr,
@@ -2112,8 +2093,8 @@ check_expr_for_each(struct context *ctx,
 		}
 		// fallthrough
 	case FOR_EACH_VALUE:
-		initializer_type = type_dealias(ctx, type_dereference(ctx,
-			initializer_type));
+		initializer_type = type_dealias(ctx, check_autodereference(ctx,
+			abinding->initializer->loc, initializer_type));
 
 		if (initializer_type->storage != STORAGE_ARRAY
 				&& initializer_type->storage != STORAGE_SLICE) {
@@ -2564,13 +2545,8 @@ check_expr_measure(struct context *ctx,
 	case M_LEN:
 		expr->len.value = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, aexpr->measure.value, expr->len.value, NULL);
-		const struct type *type =
-			type_dereference(ctx, expr->len.value->result);
-		if (!type) {
-			error(ctx, aexpr->measure.value->loc, expr,
-				"Cannot dereference nullable pointer for len");
-			return;
-		}
+		const struct type *type = check_autodereference(ctx,
+				aexpr->measure.value->loc, expr->len.value->result);
 		type = type_dealias(ctx, type);
 		enum type_storage vstor = type->storage;
 		bool valid = vstor == STORAGE_ARRAY || vstor == STORAGE_SLICE
@@ -2867,7 +2843,7 @@ check_expr_return(struct context *ctx,
 static void
 slice_bounds_check(struct context *ctx, struct expression *expr)
 {
-	const struct type *atype = type_dereference(ctx, expr->slice.object->result);
+	const struct type *atype = type_dereference(ctx, expr->slice.object->result, false);
 	const struct type *dtype = type_dealias(ctx, atype);
 	struct expression start, end;
 	enum {
@@ -2915,13 +2891,8 @@ check_expr_slice(struct context *ctx,
 		mkerror(aexpr->loc, expr);
 		return;
 	}
-	const struct type *atype =
-		type_dereference(ctx, expr->slice.object->result);
-	if (!atype) {
-		error(ctx, aexpr->slice.object->loc, expr,
-			"Cannot dereference nullable pointer for slicing");
-		return;
-	}
+	const struct type *atype = check_autodereference(ctx,
+			aexpr->slice.object->loc, expr->slice.object->result);
 	const struct type *dtype = type_dealias(ctx, atype);
 	if (dtype->storage != STORAGE_SLICE
 			&& dtype->storage != STORAGE_ARRAY) {

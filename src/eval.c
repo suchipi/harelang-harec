@@ -698,7 +698,7 @@ eval_len(struct context *ctx,
 	struct expression *restrict out)
 {
 	assert(in->type == EXPR_LEN);
-	const struct type *expr_type = type_dereference(ctx, in->len.value->result);
+	const struct type *expr_type = type_dereference(ctx, in->len.value->result, false);
 	assert(expr_type != NULL);
 	expr_type = type_dealias(ctx, expr_type);
 

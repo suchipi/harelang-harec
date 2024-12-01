@@ -165,7 +165,8 @@ struct dimensions {
 	size_t align;
 };
 
-const struct type *type_dereference(struct context *ctx, const struct type *type);
+const struct type *type_dereference(struct context *ctx, const struct type *type,
+		bool allow_nullable);
 const struct type *type_dealias(struct context *ctx, const struct type *type);
 const struct struct_field *type_get_field(struct context *ctx,
 	const struct type *type, const char *name);

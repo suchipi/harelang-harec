@@ -2882,7 +2882,7 @@ static struct gen_value
 gen_expr_len(struct gen_context *ctx, const struct expression *expr)
 {
 	const struct expression *value = expr->len.value;
-	const struct type *type = type_dereference(NULL, value->result);
+	const struct type *type = type_dereference(NULL, value->result, false);
 	assert(type != NULL);
 	type = type_dealias(NULL, type);
 	assert(type->storage == STORAGE_SLICE || type->storage == STORAGE_STRING);

@@ -10,19 +10,19 @@
 #include "util.h"
 
 const struct type *
-type_dereference(struct context *ctx, const struct type *type)
+type_dereference(struct context *ctx, const struct type *type, bool allow_nullable)
 {
 	switch (type->storage) {
 	case STORAGE_ALIAS:
 		if (type_dealias(ctx, type)->storage != STORAGE_POINTER) {
 			return type;
 		}
-		return type_dereference(ctx, type_dealias(ctx, type));
+		return type_dereference(ctx, type_dealias(ctx, type), allow_nullable);
 	case STORAGE_POINTER:
-		if (type->pointer.flags & PTR_NULLABLE) {
+		if (!allow_nullable && type->pointer.flags & PTR_NULLABLE) {
 			return NULL;
 		}
-		return type_dereference(ctx, type->pointer.referent);
+		return type_dereference(ctx, type->pointer.referent, allow_nullable);
 	default:
 		return type;
 	}
