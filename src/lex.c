@@ -163,8 +163,8 @@ error(struct location loc, const char *fmt, ...)
 void
 lex_init(struct lexer *lexer, FILE *f, int fileid)
 {
-	memset(lexer, 0, sizeof(*lexer));
 	lexer->in = f;
+	lexer->buflen = 0;
 	lexer->bufsz = 256;
 	lexer->buf = xcalloc(1, lexer->bufsz);
 	lexer->un.token = T_NONE;
@@ -173,6 +173,7 @@ lex_init(struct lexer *lexer, FILE *f, int fileid)
 	lexer->loc.file = fileid;
 	lexer->c[0] = UINT32_MAX;
 	lexer->c[1] = UINT32_MAX;
+	lexer->require_int = false;
 }
 
 void
