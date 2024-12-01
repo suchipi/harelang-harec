@@ -49,6 +49,8 @@ int xvfprintf(FILE *restrict f, const char *restrict fmt, va_list ap) FORMAT(0);
 #define strdup(s) (char *)(sizeof(struct { static_assert(0, "Use xstrdup instead"); int _; })
 
 char *gen_name(int *id, const char *fmt);
+void append_buffer(char **buf, size_t *restrict ln, size_t *restrict cap,
+		const char *b, size_t sz);
 
 void errline(struct location loc);
 

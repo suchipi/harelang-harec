@@ -128,6 +128,19 @@ gen_name(int *id, const char *fmt)
 }
 
 void
+append_buffer(char **buf, size_t *restrict ln, size_t *restrict cap,
+		const char *b, size_t sz)
+{
+	if (*ln + sz >= *cap) {
+		*cap += *ln + sz + 1;
+		*buf = xrealloc(*buf, *cap);
+	}
+	memcpy(*buf + *ln, b, sz);
+	*ln += sz;
+	(*buf)[*ln] = '\0';
+}
+
+void
 errline(struct location loc)
 {
 	const char *path = sources[loc.file];

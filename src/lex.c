@@ -196,18 +196,6 @@ update_lineno(struct location *loc, uint32_t c)
 	}
 }
 
-static void
-append_buffer(struct lexer *lexer, const char *buf, size_t sz)
-{
-	if (lexer->buflen + sz >= lexer->bufsz) {
-		lexer->bufsz *= 2;
-		lexer->buf = xrealloc(lexer->buf, lexer->bufsz);
-	}
-	memcpy(lexer->buf + lexer->buflen, buf, sz);
-	lexer->buflen += sz;
-	lexer->buf[lexer->buflen] = '\0';
-}
-
 static uint32_t
 next(struct lexer *lexer, struct location *loc, bool buffer)
 {
@@ -234,7 +222,7 @@ next(struct lexer *lexer, struct location *loc, bool buffer)
 	}
 	char buf[UTF8_MAX_SIZE];
 	size_t sz = utf8_encode(&buf[0], c);
-	append_buffer(lexer, buf, sz);
+	append_buffer(&lexer->buf, &lexer->buflen, &lexer->bufsz, buf, sz);
 	return c;
 }
 
@@ -636,7 +624,8 @@ lex_string(struct lexer *lexer, struct token *out)
 			push(lexer, c, false);
 			if (delim == '"') {
 				size_t sz = lex_rune(lexer, buf);
-				append_buffer(lexer, buf, sz);
+				append_buffer(&lexer->buf, &lexer->buflen,
+					&lexer->bufsz, buf, sz);
 			} else {
 				next(lexer, NULL, true);
 			}

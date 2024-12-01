@@ -23,16 +23,10 @@ identifier_unparse_ex(const struct identifier *ident, const char *delim,
 	if (ident->ns) {
 		identifier_unparse_ex(ident->ns, delim,
 			delimlen, buf, len, cap);
-		memcpy(*buf + *len, delim, delimlen);
-		*len += delimlen;
+		append_buffer(buf, len, cap, delim, delimlen);
 	}
 	size_t namelen = strlen(ident->name);
-	if (*len + namelen + delimlen > *cap) {
-		*cap += namelen + delimlen;
-		*buf = xrealloc(*buf, *cap);
-	}
-	memcpy(*buf + *len, ident->name, namelen + 1);
-	*len += namelen;
+	append_buffer(buf, len, cap, ident->name, namelen);
 }
 
 char *
