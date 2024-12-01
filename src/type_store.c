@@ -243,7 +243,8 @@ struct_new_field(struct context *ctx, struct type *type,
 	return field;
 }
 
-static const struct type *type_store_lookup_type(struct context *ctx, const struct type *type, const struct dimensions *dim);
+static const struct type *type_store_lookup_type(struct context *ctx,
+		const struct type *type);
 
 bool
 check_embedded_member(struct context *ctx,
@@ -322,7 +323,7 @@ shift_fields(struct context *ctx,
 		new->offset += field->offset;
 	}
 
-	parent->type = type_store_lookup_type(ctx, &new, NULL);
+	parent->type = type_store_lookup_type(ctx, &new);
 }
 
 static bool
@@ -975,6 +976,9 @@ type_init_from_atype(struct context *ctx,
 			*type = builtin_type_error;
 			return (struct dimensions){0};
 		}
+		if (type->storage == STORAGE_UNION || !type->struct_union.packed) {
+			add_padding(&type->size, type->align);
+		}
 		break;
 	case STORAGE_TAGGED:
 		if (size_only) {
@@ -984,6 +988,7 @@ type_init_from_atype(struct context *ctx,
 		} else {
 			tagged_init_from_atype(ctx, type, atype);
 		}
+		add_padding(&type->size, type->align);
 		break;
 	case STORAGE_TUPLE:
 		if (size_only) {
@@ -994,27 +999,14 @@ type_init_from_atype(struct context *ctx,
 		} else {
 			tuple_init_from_atype(ctx, type, atype);
 		}
+		add_padding(&type->size, type->align);
 		break;
 	}
-
-	struct dimensions dim = {
-		.size = type->size,
-		.align = type->align,
-	};
-	if (type->storage != STORAGE_STRUCT || !type->struct_union.packed) {
-		// padding an alias can only break packed structs
-		if (type->storage != STORAGE_ALIAS) {
-			add_padding(&dim.size, dim.align);
-		}
-	}
-	return dim;
+	return dim_from_type(type);
 }
 
 static const struct type *
-type_store_lookup_type(
-	struct context *ctx,
-	const struct type *type,
-	const struct dimensions *dims)
+type_store_lookup_type(struct context *ctx, const struct type *type)
 {
 	const struct type *builtin = builtin_for_type(type);
 	if (builtin) {
@@ -1043,11 +1035,6 @@ type_store_lookup_type(
 	bucket = *next = xcalloc(1, sizeof(struct type_bucket));
 	bucket->type = *type;
 	bucket->type.id = hash;
-
-	if (dims == NULL) {
-		add_padding(&bucket->type.size, type->align);
-	}
-
 	return &bucket->type;
 }
 
@@ -1066,7 +1053,7 @@ type_store_lookup_atype(struct context *ctx, const struct ast_type *atype)
 			ctx->scope, &temp.alias.name);
 		temp.flags |= obj->type->flags;
 	}
-	return type_store_lookup_type(ctx, &temp, NULL);
+	return type_store_lookup_type(ctx, &temp);
 }
 
 // Compute dimensions of an incomplete type without completing it
@@ -1085,7 +1072,7 @@ type_store_lookup_with_flags(struct context *ctx,
 	}
 	struct type new = *type;
 	new.flags = flags;
-	return type_store_lookup_type(ctx, &new, NULL);
+	return type_store_lookup_type(ctx, &new);
 }
 
 const struct type *
@@ -1118,7 +1105,7 @@ type_store_lookup_pointer(struct context *ctx, struct location loc,
 		.size = builtin_type_uintptr.size,
 		.align = builtin_type_uintptr.align,
 	};
-	return type_store_lookup_type(ctx, &ptr, NULL);
+	return type_store_lookup_type(ctx, &ptr);
 }
 
 const struct type *
@@ -1158,7 +1145,7 @@ type_store_lookup_array(struct context *ctx, struct location loc,
 			? SIZE_UNDEFINED : members->size * len,
 		.align = members->align,
 	};
-	return type_store_lookup_type(ctx, &array, NULL);
+	return type_store_lookup_type(ctx, &array);
 }
 
 const struct type *
@@ -1189,34 +1176,29 @@ type_store_lookup_slice(struct context *ctx, struct location loc,
 		.size = builtin_type_uintptr.size + 2 * builtin_type_size.size,
 		.align = builtin_type_uintptr.align,
 	};
-	return type_store_lookup_type(ctx, &slice, NULL);
+	return type_store_lookup_type(ctx, &slice);
 }
 
 const struct type *
-type_store_lookup_alias(struct context *ctx,
-		const struct type *type,
-		const struct dimensions *dims)
+type_store_lookup_alias(struct context *ctx, const struct type *type)
 {
-	return type_store_lookup_type(ctx, type, dims);
+	return type_store_lookup_type(ctx, type);
 }
 
 
 // Sorts members by id and deduplicates entries. Does not enforce usual tagged
 // union invariants. The returned type is not a singleton.
-static const struct type *
+static struct type *
 lookup_tagged(struct context *ctx, struct type_tagged_union *tags)
 {
-	struct type type = {
-		.storage = STORAGE_TAGGED,
-	};
+	struct type *ret = xcalloc(1, sizeof(struct type));
+	ret->storage = STORAGE_TAGGED;
 	size_t nmemb = sum_tagged_memb(ctx, tags);
 	struct type_tagged_union **tu =
 		xcalloc(nmemb, sizeof(struct type_tagged_union *));
 	size_t i = 0;
 	collect_tagged_memb(ctx, tu, tags, &i);
-	tagged_init(&type, tu, nmemb);
-	struct type *ret = xcalloc(1, sizeof(struct type));
-	*ret = type;
+	tagged_init(ret, tu, nmemb);
 	return ret;
 }
 
@@ -1224,11 +1206,12 @@ const struct type *
 type_store_lookup_tagged(struct context *ctx, struct location loc,
 		struct type_tagged_union *tags)
 {
-	const struct type *type = lookup_tagged(ctx, tags);
+	struct type *type = lookup_tagged(ctx, tags);
 	if (!enforce_tagged_invariants(ctx, loc, type)) {
 		return &builtin_type_error;
 	}
-	return type_store_lookup_type(ctx, type, NULL);
+	add_padding(&type->size, type->align);
+	return type_store_lookup_type(ctx, type);
 }
 
 const struct type *
@@ -1267,7 +1250,8 @@ type_store_lookup_tuple(struct context *ctx, struct location loc,
 		}
 	}
 	type.tuple = *values;
-	return type_store_lookup_type(ctx, &type, NULL);
+	add_padding(&type.size, type.align);
+	return type_store_lookup_type(ctx, &type);
 }
 
 const struct type *
@@ -1289,7 +1273,7 @@ type_store_lookup_enum(struct context *ctx, const struct ast_type *atype,
 	}
 	type.size = type.alias.type->size;
 	type.align = type.alias.type->size;
-	return type_store_lookup_type(ctx, &type, NULL);
+	return type_store_lookup_type(ctx, &type);
 }
 
 // Algorithm:

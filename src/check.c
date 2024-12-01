@@ -4613,7 +4613,7 @@ resolve_type(struct context *ctx, struct incomplete_declaration *idecl)
 	};
 
 	struct type *alias = (struct type *)type_store_lookup_alias(
-			ctx, &_alias, &dim);
+			ctx, &_alias);
 	idecl->obj.otype = O_TYPE;
 	idecl->obj.type = alias;
 	if (ctx->next == cur_err) {
