@@ -2218,8 +2218,7 @@ parse_binding_list(struct lexer *lexer, bool is_static)
 	struct ast_expression_binding *binding = &exp->binding;
 	struct ast_expression_binding **next = &exp->binding.next;
 
-	bool more = true;
-	while (more) {
+	while (true) {
 		switch (lex(lexer, &tok)) {
 		case T_NAME:
 			binding->name = tok.name;
@@ -2233,7 +2232,6 @@ parse_binding_list(struct lexer *lexer, bool is_static)
 		default:
 			synerr(&tok, T_NAME, T_LPAREN, T_EOF);
 		}
-		binding->initializer = mkexpr(lexer->loc);
 		binding->is_static = is_static;
 
 		switch (lex(lexer, &tok)) {
@@ -2249,17 +2247,13 @@ parse_binding_list(struct lexer *lexer, bool is_static)
 
 		binding->initializer = parse_expression(lexer);
 
-		switch (lex(lexer, &tok)) {
-		case T_COMMA:
-			*next = xcalloc(1, sizeof(struct ast_expression_binding));
-			binding = *next;
-			next = &binding->next;
-			break;
-		default:
+		if (lex(lexer, &tok) != T_COMMA) {
 			unlex(lexer, &tok);
-			more = false;
 			break;
 		}
+		*next = xcalloc(1, sizeof(struct ast_expression_binding));
+		binding = *next;
+		next = &binding->next;
 	}
 	return exp;
 }
