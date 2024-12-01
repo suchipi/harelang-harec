@@ -9,11 +9,11 @@
 #include "types.h"
 #include "util.h"
 
-static struct dimensions lookup_atype_with_dimensions(struct context *ctx,
-		const struct type **type, const struct ast_type *atype);
-
-static const struct type *
-lookup_atype(struct context *ctx, const struct ast_type *atype);
+static struct dimensions
+dim_from_type(const struct type *type)
+{
+	return (struct dimensions){ .size = type->size, .align = type->align };
+}
 
 static size_t
 ast_array_len(struct context *ctx, const struct ast_type *atype)
@@ -163,9 +163,10 @@ struct_new_field(struct context *ctx, struct type *type,
 	}
 	struct dimensions dim = {0};
 	if (size_only) {
-		dim = lookup_atype_with_dimensions(ctx, NULL, afield->type);
+		dim = type_store_lookup_dimensions(ctx, afield->type);
 	} else {
-		dim = lookup_atype_with_dimensions(ctx, &field->type, afield->type);
+		field->type = type_store_lookup_atype(ctx, afield->type);
+		dim = dim_from_type(field->type);
 	}
 	if (afield->next != NULL && dim.size == SIZE_UNDEFINED) {
 		error(ctx, afield->type->loc, NULL,
@@ -242,7 +243,7 @@ struct_new_field(struct context *ctx, struct type *type,
 	return field;
 }
 
-static const struct type *type_store_lookup_type(struct context *ctx, const struct type *type);
+static const struct type *type_store_lookup_type(struct context *ctx, const struct type *type, const struct dimensions *dim);
 
 bool
 check_embedded_member(struct context *ctx,
@@ -321,7 +322,7 @@ shift_fields(struct context *ctx,
 		new->offset += field->offset;
 	}
 
-	parent->type = type_store_lookup_type(ctx, &new);
+	parent->type = type_store_lookup_type(ctx, &new, NULL);
 }
 
 static bool
@@ -504,7 +505,7 @@ collect_atagged_memb(struct context *ctx,
 		size_t *i)
 {
 	for (; atu; atu = atu->next) {
-		const struct type *type = lookup_atype(ctx, atu->type);
+		const struct type *type = type_store_lookup_atype(ctx, atu->type);
 		if (type->storage == STORAGE_TAGGED) {
 			collect_tagged_memb(ctx, ta, &type->tagged, i);
 			continue;
@@ -605,7 +606,7 @@ _tagged_size(struct context *ctx, const struct ast_tagged_union_type *u)
 		} else if (atype->storage == STORAGE_TAGGED) {
 			memb = _tagged_size(ctx, &atype->tagged);
 		} else {
-			memb = lookup_atype_with_dimensions(ctx, NULL, atype);
+			memb = type_store_lookup_dimensions(ctx, atype);
 		}
 		if (memb.size == SIZE_UNDEFINED) {
 			error(ctx, atype->loc, NULL,
@@ -650,9 +651,10 @@ tuple_init_from_atype(struct context *ctx,
 		struct dimensions memb = {0};
 		size_t offset = 0;
 		if (type) {
-			memb = lookup_atype_with_dimensions(ctx, &cur->type, atuple->type);
+			cur->type = type_store_lookup_atype(ctx, atuple->type);
+			memb = dim_from_type(cur->type);
 		} else {
-			memb = lookup_atype_with_dimensions(ctx, NULL, atuple->type);
+			memb = type_store_lookup_dimensions(ctx, atuple->type);
 		}
 		if (memb.size == SIZE_UNDEFINED) {
 			error(ctx, atype->loc, NULL,
@@ -842,11 +844,12 @@ type_init_from_atype(struct context *ctx,
 		type->array.length = ast_array_len(ctx, atype);
 		struct dimensions memb = {0};
 		if (size_only) {
-			memb = lookup_atype_with_dimensions(ctx,
-				NULL, atype->array.members);
+			memb = type_store_lookup_dimensions(ctx,
+				atype->array.members);
 		} else {
-			memb = lookup_atype_with_dimensions(ctx,
-				&type->array.members, atype->array.members);
+			type->array.members = type_store_lookup_atype(ctx,
+				atype->array.members);
+			memb = dim_from_type(type->array.members);
 			if (type->array.members->storage == STORAGE_ERROR) {
 				*type = builtin_type_error;
 				return (struct dimensions){0};
@@ -878,14 +881,15 @@ type_init_from_atype(struct context *ctx,
 		if (size_only) {
 			break;
 		}
-		type->func.result = lookup_atype(ctx, atype->func.result);
+		type->func.result = type_store_lookup_atype(ctx,
+				atype->func.result);
 		type->func.variadism = atype->func.variadism;
 		struct type_func_param *param, **next = &type->func.params;
 		bool has_optional = false;
 		for (struct ast_function_parameters *aparam = atype->func.params;
 				aparam; aparam = aparam->next) {
 			param = *next = xcalloc(1, sizeof(struct type_func_param));
-			param->type = lookup_atype(ctx, aparam->type);
+			param->type = type_store_lookup_atype(ctx, aparam->type);
 			if (param->type->size == SIZE_UNDEFINED) {
 				error(ctx, atype->loc, NULL,
 					"Function parameter types must have defined size");
@@ -919,7 +923,7 @@ type_init_from_atype(struct context *ctx,
 			break;
 		}
 		type->pointer.flags = atype->pointer.flags;
-		type->pointer.referent = lookup_atype(
+		type->pointer.referent = type_store_lookup_atype(
 			ctx, atype->pointer.referent);
 		if (type->pointer.referent->storage == STORAGE_ERROR) {
 			*type = builtin_type_error;
@@ -945,7 +949,8 @@ type_init_from_atype(struct context *ctx,
 		if (size_only) {
 			break;
 		}
-		type->array.members = lookup_atype(ctx, atype->slice.members);
+		type->array.members = type_store_lookup_atype(ctx,
+				atype->slice.members);
 		if (type->array.members->storage == STORAGE_ERROR) {
 			*type = builtin_type_error;
 			return (struct dimensions){0};
@@ -1006,7 +1011,7 @@ type_init_from_atype(struct context *ctx,
 }
 
 static const struct type *
-_type_store_lookup_type(
+type_store_lookup_type(
 	struct context *ctx,
 	const struct type *type,
 	const struct dimensions *dims)
@@ -1046,52 +1051,22 @@ _type_store_lookup_type(
 	return &bucket->type;
 }
 
-static const struct type *
-type_store_lookup_type(struct context *ctx, const struct type *type)
-{
-	if (type->storage != STORAGE_ALIAS) {
-		return _type_store_lookup_type(ctx, type, NULL);
-	}
-	// References to type aliases always inherit the flags that the
-	// alias was defined with
-	struct type psuedotype = *type;
-	const struct scope_object *obj = scope_lookup(
-		ctx->scope, &type->alias.name);
-	psuedotype.flags |= obj->type->flags;
-	return type_store_lookup_alias(ctx, &psuedotype, NULL);
-}
-
-static struct dimensions
-lookup_atype_with_dimensions(struct context *ctx,
-	const struct type **type,
-	const struct ast_type *atype)
-{
-	struct type temp = {0};
-	struct dimensions dim = {0};
-	if (type) {
-		dim = type_init_from_atype(ctx, &temp, atype);
-		*type = type_store_lookup_type(ctx, &temp);
-	} else {
-		dim = type_init_from_atype(ctx, NULL, atype);
-	}
-	return dim;
-}
-
-static const struct type *
-lookup_atype(struct context *ctx, const struct ast_type *atype)
-{
-	const struct type *type = NULL;
-	lookup_atype_with_dimensions(ctx, &type, atype);
-	return type;
-}
-
 const struct type *
 type_store_lookup_atype(struct context *ctx, const struct ast_type *atype)
 {
 	if (atype->storage == STORAGE_NULL) {
 		return &builtin_type_null;
 	}
-	return lookup_atype(ctx, atype);
+	struct type temp = {0};
+	type_init_from_atype(ctx, &temp, atype);
+	if (temp.storage == STORAGE_ALIAS) {
+		// References to type aliases always inherit the flags that the
+		// alias was defined with
+		const struct scope_object *obj = scope_lookup(
+			ctx->scope, &temp.alias.name);
+		temp.flags |= obj->type->flags;
+	}
+	return type_store_lookup_type(ctx, &temp, NULL);
 }
 
 // Compute dimensions of an incomplete type without completing it
@@ -1110,7 +1085,7 @@ type_store_lookup_with_flags(struct context *ctx,
 	}
 	struct type new = *type;
 	new.flags = flags;
-	return _type_store_lookup_type(ctx, &new, NULL);
+	return type_store_lookup_type(ctx, &new, NULL);
 }
 
 const struct type *
@@ -1143,7 +1118,7 @@ type_store_lookup_pointer(struct context *ctx, struct location loc,
 		.size = builtin_type_uintptr.size,
 		.align = builtin_type_uintptr.align,
 	};
-	return type_store_lookup_type(ctx, &ptr);
+	return type_store_lookup_type(ctx, &ptr, NULL);
 }
 
 const struct type *
@@ -1183,7 +1158,7 @@ type_store_lookup_array(struct context *ctx, struct location loc,
 			? SIZE_UNDEFINED : members->size * len,
 		.align = members->align,
 	};
-	return type_store_lookup_type(ctx, &array);
+	return type_store_lookup_type(ctx, &array, NULL);
 }
 
 const struct type *
@@ -1214,7 +1189,7 @@ type_store_lookup_slice(struct context *ctx, struct location loc,
 		.size = builtin_type_uintptr.size + 2 * builtin_type_size.size,
 		.align = builtin_type_uintptr.align,
 	};
-	return type_store_lookup_type(ctx, &slice);
+	return type_store_lookup_type(ctx, &slice, NULL);
 }
 
 const struct type *
@@ -1222,7 +1197,7 @@ type_store_lookup_alias(struct context *ctx,
 		const struct type *type,
 		const struct dimensions *dims)
 {
-	return _type_store_lookup_type(ctx, type, dims);
+	return type_store_lookup_type(ctx, type, dims);
 }
 
 
@@ -1253,7 +1228,7 @@ type_store_lookup_tagged(struct context *ctx, struct location loc,
 	if (!enforce_tagged_invariants(ctx, loc, type)) {
 		return &builtin_type_error;
 	}
-	return type_store_lookup_type(ctx, type);
+	return type_store_lookup_type(ctx, type, NULL);
 }
 
 const struct type *
@@ -1292,7 +1267,7 @@ type_store_lookup_tuple(struct context *ctx, struct location loc,
 		}
 	}
 	type.tuple = *values;
-	return type_store_lookup_type(ctx, &type);
+	return type_store_lookup_type(ctx, &type, NULL);
 }
 
 const struct type *
@@ -1314,7 +1289,7 @@ type_store_lookup_enum(struct context *ctx, const struct ast_type *atype,
 	}
 	type.size = type.alias.type->size;
 	type.align = type.alias.type->size;
-	return type_store_lookup_type(ctx, &type);
+	return type_store_lookup_type(ctx, &type, NULL);
 }
 
 // Algorithm:
