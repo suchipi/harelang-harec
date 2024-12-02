@@ -33,5 +33,9 @@ export let @symbol("s_y") s_b: int = 1;
 export type f64_alias = f64;
 export def val5: f64_alias = 0.0;
 
+export type uintptr_enum = enum uintptr {
+	MAX = ~0u64: uintptr,
+};
+
 // ensure rt isn't imported in this subunit
 static assert(SIZE_RT_SLICE == size([]opaque));
