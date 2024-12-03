@@ -884,9 +884,6 @@ gen_expr_assign(struct gen_context *ctx, const struct expression *expr)
 		struct qbe_value qrval = mkqval(ctx, &rvalue);
 		enum qbe_instr instr = binarithm_for_op(ctx,
 			expr->assign.op, lvalue.type);
-		if (bin_extend[expr->assign.op][0]) {
-			ilval = extend(ctx, ilval, lvalue.type);
-		}
 		if (bin_extend[expr->assign.op][1]) {
 			qrval = extend(ctx, qrval, rvalue.type);
 		}
