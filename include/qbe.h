@@ -26,6 +26,7 @@ struct qbe_field {
 
 struct qbe_type {
 	enum qbe_stype stype;
+	bool sgn; // for sub-word types
 	size_t size;
 
 	// Aggregate types only:
@@ -36,8 +37,10 @@ struct qbe_type {
 
 // Simple type singletons
 extern const struct qbe_type
-	qbe_byte,
-	qbe_half,
+	qbe_sbyte,
+	qbe_ubyte,
+	qbe_shalf,
+	qbe_uhalf,
 	qbe_word,
 	qbe_long,
 	qbe_single,

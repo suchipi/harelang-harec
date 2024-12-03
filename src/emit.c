@@ -10,12 +10,14 @@
 #include "util.h"
 
 static void
-emit_qtype(const struct qbe_type *type, bool aggr, FILE *out)
+emit_qtype(const struct qbe_type *type, bool aggr, bool sign, FILE *out)
 {
 	assert(type);
 	switch (type->stype) {
 	case Q_BYTE:
 	case Q_HALF:
+		xfprintf(out, "%s", sign ? (type->sgn ? "s" : "u") : "");
+		/* fallthrough */
 	case Q_WORD:
 	case Q_LONG:
 	case Q_SINGLE:
@@ -66,7 +68,7 @@ qemit_type(const struct qbe_def *def, FILE *out)
 		}
 		if (field->type) {
 			xfprintf(out, " ");
-			emit_qtype(field->type, true, out);
+			emit_qtype(field->type, true, false, out);
 		}
 		if (field->count) {
 			xfprintf(out, " %zu", field->count);
@@ -143,7 +145,7 @@ emit_call(const struct qbe_statement *stmt, FILE *out)
 	while (arg) {
 		xfprintf(out, "%s", comma ? ", " : "");
 		if (arg->value.kind != QV_VARIADIC) {
-			emit_qtype(arg->value.type, true, out);
+			emit_qtype(arg->value.type, true, true, out);
 			xfprintf(out, " ");
 		}
 		emit_value(&arg->value, out);
@@ -167,7 +169,7 @@ emit_stmt(const struct qbe_statement *stmt, FILE *out)
 			if (stmt->out != NULL) {
 				emit_value(stmt->out, out);
 				xfprintf(out, " =");
-				emit_qtype(stmt->out->type, true, out);
+				emit_qtype(stmt->out->type, true, false, out);
 				xfprintf(out, " ");
 			}
 			emit_call(stmt, out);
@@ -176,7 +178,7 @@ emit_stmt(const struct qbe_statement *stmt, FILE *out)
 		if (stmt->out != NULL) {
 			emit_value(stmt->out, out);
 			xfprintf(out, " =");
-			emit_qtype(stmt->out->type, false, out);
+			emit_qtype(stmt->out->type, false, false, out);
 			xfprintf(out, " ");
 		}
 		xfprintf(out, "%s%s", qbe_instr[stmt->instr],
@@ -204,12 +206,12 @@ emit_func(const struct qbe_def *def, FILE *out)
 			def->exported ? " export" : "");
 	if (def->func.returns->stype != Q__VOID) {
 		xfprintf(out, " ");
-		emit_qtype(def->func.returns, true, out);
+		emit_qtype(def->func.returns, true, true, out);
 	}
 	xfprintf(out, " $%s(", def->name);
 	const struct qbe_func_param *param = def->func.params;
 	while (param) {
-		emit_qtype(param->type, true, out);
+		emit_qtype(param->type, true, true, out);
 		xfprintf(out, " %%%s", param->name);
 		if (param->next || def->func.variadic) {
 			xfprintf(out, ", ");
@@ -333,7 +335,7 @@ emit_data(const struct qbe_def *def, FILE *out)
 	while (item) {
 		switch (item->type) {
 		case QD_VALUE:
-			emit_qtype(item->value.type, true, out);
+			emit_qtype(item->value.type, true, false, out);
 			xfprintf(out, " ");
 			emit_value(&item->value, out);
 			break;

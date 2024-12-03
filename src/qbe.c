@@ -8,12 +8,24 @@
 
 // Simple type singletons
 const struct qbe_type
-qbe_byte = {
+qbe_sbyte = {
 	.stype = Q_BYTE,
+	.sgn = true,
 	.size = 1,
 },
-qbe_half = {
+qbe_ubyte = {
+	.stype = Q_BYTE,
+	.sgn = false,
+	.size = 1,
+},
+qbe_shalf = {
 	.stype = Q_HALF,
+	.sgn = true,
+	.size = 2,
+},
+qbe_uhalf = {
+	.stype = Q_HALF,
+	.sgn = false,
 	.size = 2,
 },
 qbe_word = {

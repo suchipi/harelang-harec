@@ -1166,7 +1166,7 @@ gen_expr_call(struct gen_context *ctx, const struct expression *expr)
 			return rval;
 		}
 		args->value = mkqval(ctx, &arg);
-		args->value.type = qtype_lookup(ctx, carg->value->result, false);
+		args->value.type = qtype_lookup(ctx, carg->value->result, true);
 		next = &args->next;
 	}
 
@@ -3416,7 +3416,7 @@ gen_function_decl(struct gen_context *ctx, const struct declaration *decl)
 	if (fntype->func.result->size != 0
 			&& fntype->func.result->size != SIZE_UNDEFINED) {
 		qdef->func.returns = qtype_lookup(
-			ctx, fntype->func.result, false);
+			ctx, fntype->func.result, true);
 	} else {
 		qdef->func.returns = &qbe_void;
 	}
@@ -3434,7 +3434,7 @@ gen_function_decl(struct gen_context *ctx, const struct declaration *decl)
 		param = *next = xcalloc(1, sizeof(struct qbe_func_param));
 		assert(!obj->ident.ns); // Invariant
 		param->name = xstrdup(obj->ident.name);
-		param->type = qtype_lookup(ctx, type, false);
+		param->type = qtype_lookup(ctx, type, true);
 
 		struct gen_binding *gb =
 			xcalloc(1, sizeof(struct gen_binding));
@@ -3612,18 +3612,18 @@ gen_data_item(struct gen_context *ctx, const struct expression *expr,
 	case STORAGE_U8:
 		item->type = QD_VALUE;
 		item->value = constw((uint8_t)literal->uval);
-		item->value.type = &qbe_byte;
+		item->value.type = type_is_signed(NULL, type) ? &qbe_sbyte : &qbe_ubyte;
 		break;
 	case STORAGE_BOOL:
 		item->type = QD_VALUE;
 		item->value = constw(literal->bval ? 1 : 0);
-		item->value.type = &qbe_byte;
+		item->value.type = &qbe_ubyte;
 		break;
 	case STORAGE_I16:
 	case STORAGE_U16:
 		item->type = QD_VALUE;
 		item->value = constw((uint16_t)literal->uval);
-		item->value.type = &qbe_half;
+		item->value.type = type_is_signed(NULL, type) ? &qbe_shalf : &qbe_uhalf;
 		break;
 	case STORAGE_I32:
 	case STORAGE_U32:

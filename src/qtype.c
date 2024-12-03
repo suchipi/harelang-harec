@@ -256,13 +256,15 @@ qtype_lookup(struct gen_context *ctx,
 		const struct type *type,
 		bool xtype) {
 	switch (type->storage) {
-	case STORAGE_U8:
 	case STORAGE_I8:
+		return xtype ? &qbe_sbyte : &qbe_word;
+	case STORAGE_U8:
 	case STORAGE_BOOL:
-		return xtype ? &qbe_byte : &qbe_word;
+		return xtype ? &qbe_ubyte : &qbe_word;
 	case STORAGE_I16:
+		return xtype ? &qbe_shalf : &qbe_word;
 	case STORAGE_U16:
-		return xtype ? &qbe_half : &qbe_word;
+		return xtype ? &qbe_uhalf : &qbe_word;
 	case STORAGE_I32:
 	case STORAGE_U32:
 	case STORAGE_INT:
