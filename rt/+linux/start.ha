@@ -9,8 +9,6 @@ let argc: size = 0;
 let argv: *[*]*const u8 = null: *[*]*const u8;
 let envp: *[*]nullable *const u8 = null: *[*]nullable *const u8;
 
-export let exit_status = 0;
-
 export fn start_ha(iv: *[*]uintptr) never = {
 	const ninit = (&init_end: uintptr - &init_start: uintptr): size
 		/ size(*fn() void);
@@ -30,5 +28,5 @@ export fn start_ha(iv: *[*]uintptr) never = {
 		fini_start[i]();
 	};
 
-	exit(exit_status);
+	exit(0);
 };

@@ -1,4 +1,3 @@
-use rt;
 use rt::{compile, exit, status};
 
 fn simple() int = return 69;
@@ -36,16 +35,21 @@ fn vaargs() void = {
 let x: int = 42;
 
 @init fn init() void = {
+	assert(x == 42);
 	x = 1337;
-	rt::exit_status = 42;
 };
 
 @init fn init() void = {
 	void; // Should be allowed to have the same name
 };
 
+fn initfini() void = {
+	assert(x == 1337);
+	x = 0;
+};
+
 @fini fn fini() void = {
-	rt::exit_status = 0;
+	assert(x == 0);
 };
 
 @fini fn fini() void = {
@@ -259,8 +263,8 @@ export fn main() void = {
 	vaargs();
 	cvaargs();
 	zerosizeparams();
-	assert(x == 1337);
 	reject();
 	optional_params();
 	_never();
+	initfini();
 };
