@@ -249,7 +249,7 @@ struct_new_field(struct context *ctx, struct type *type,
 static const struct type *type_store_lookup_type(struct context *ctx,
 		const struct type *type);
 
-bool
+static bool
 check_embedded_member(struct context *ctx,
 	const struct ast_struct_union_field *afield,
 	struct struct_field *member,
@@ -285,7 +285,7 @@ check_embedded_member(struct context *ctx,
 	return true;
 }
 
-void
+static void
 shift_fields(struct context *ctx,
 	const struct ast_struct_union_field *afield, struct struct_field *parent)
 {
