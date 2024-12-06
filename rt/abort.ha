@@ -1,23 +1,20 @@
+fn write_stderr(s: str) size = write(2, *(&s: **opaque), len(s));
+
 export @symbol("rt.abort") fn _abort(
 	path: *str,
 	line: u64,
 	col: u64,
 	msg: str,
 ) void = {
-	const prefix = "Abort: ";
-	const sep = ":";
-	const sepspace = ": ";
-	write(2, constchar(prefix), len(prefix));
-	write(2, constchar(*path), len(path));
-	write(2, constchar(sep), len(sep));
-	let (line, z) = u64tos(line);
-	write(2, line, z);
-	write(2, constchar(sep), len(sep));
-	let (col, z) = u64tos(col);
-	write(2, col, z);
-	write(2, constchar(sepspace), len(sepspace));
-	write(2, constchar(msg), len(msg));
-	write(2, constchar("\n"), 1);
+	write_stderr("Abort: ");
+	write_stderr(*path);
+	write_stderr(":");
+	write_stderr(u64tos(line));
+	write_stderr(":");
+	write_stderr(u64tos(col));
+	write_stderr(": ");
+	write_stderr(msg);
+	write_stderr("\n");
 	kill(getpid(), SIGABRT);
 };
 
@@ -37,7 +34,7 @@ export fn abort_fixed(path: *str, line: u64, col: u64, i: u64) void = {
 	_abort(path, line, col, reasons[i]);
 };
 
-fn u64tos(u: u64) (*const u8, size) = {
+fn u64tos(u: u64) str = {
 	static let buf: [20]u8 = [0...]; // len("18446744073709551615")
 	let sl = buf[..0];
 	if (u == 0) {
@@ -54,5 +51,5 @@ fn u64tos(u: u64) (*const u8, size) = {
 		s += 1;
 		e -= 1;
 	};
-	return (sl: *[*]u8: *const u8, len(sl));
+	return *(&sl: *str);
 };
