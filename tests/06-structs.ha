@@ -142,6 +142,12 @@ fn nested() void = {
 	s.y.a = struct { b: int = 1337, c: int = 7331 };
 	assert(s.y.a.b == 1337);
 	assert(s.y.a.c == 7331);
+
+	// ensure this gets through parse
+	compile(status::CHECK, "type z = struct { a, x: int };")!;
+	compile(status::CHECK, "type z = struct { a::b, x: int };")!;
+	compile(status::CHECK, "let z = s { a { x = y } };")!;
+	compile(status::CHECK, "let z = s { a::b { x = y } };")!;
 };
 
 type coords = struct { @offset(0) x: int, @offset(4) y: int };
