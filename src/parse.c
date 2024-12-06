@@ -2114,14 +2114,15 @@ parse_match_expression(struct lexer *lexer)
 static void
 parse_binding_unpack(struct lexer *lexer, struct ast_binding_unpack **next)
 {
-	struct token tok = {0};
+	struct token tok;
+	while (true) {
+		struct ast_binding_unpack *new = xcalloc(1, sizeof *new);
+		*next = new;
+		next = &new->next;
 
-	bool more = true;
-	while (more) {
-		struct ident *name = NULL;
 		switch (lex(lexer, &tok)) {
 		case T_NAME:
-			name = intern_name(lexer->itbl, tok.name);
+			new->name = intern_name(lexer->itbl, tok.name);
 			break;
 		case T_UNDERSCORE:
 			break;
@@ -2129,18 +2130,11 @@ parse_binding_unpack(struct lexer *lexer, struct ast_binding_unpack **next)
 			synerr(&tok, T_NAME, T_UNDERSCORE, T_EOF);
 		}
 
-		struct ast_binding_unpack *new = xcalloc(1, sizeof *new);
-		*next = new;
-		next = &new->next;
-
-		new->name = name ? name : NULL;
-
 		switch (lex(lexer, &tok)) {
 		case T_COMMA:
 			break;
 		case T_RPAREN:
-			more = false;
-			break;
+			return;
 		default:
 			synerr(&tok, T_COMMA, T_RPAREN, T_EOF);
 		}
