@@ -4,6 +4,7 @@ export type status = enum {
 	LEX,
 	PARSE,
 	CHECK,
+	_EXEC_FAILED,
 	ABNORMAL = 255,
 };
 
@@ -21,6 +22,8 @@ fn strstatus(status: int) str = {
 		return "check (4)";
 	case status::ABNORMAL =>
 		return "abnormal (255)";
+	case status::_EXEC_FAILED =>
+		return "internal error: compiler execve failed";
 	case =>
 		return itos(status: int);
 	};
@@ -55,7 +58,7 @@ export fn compile(
 		append(argv, [alloc_cstr("-o/dev/null"), alloc_cstr("-"), null]...);
 
 		execve(harec, *(&argv: **[*]nullable *u8), envp);
-		abort();
+		exit(status::_EXEC_FAILED);
 	} else {
 		assert(child != -1, "fork(2) failed");
 		close(pipefd[0]);
@@ -88,13 +91,18 @@ export fn compile(
 			return error;
 		};
 	case let expected: status =>
-		const status = wexitstatus(wstatus);
-		if (status != expected) {
+		const exit_status = wexitstatus(wstatus);
+		if (exit_status == status::_EXEC_FAILED) {
+			write_stderr(strstatus(exit_status));
+			write_stderr("\n");
+			return error;
+		};
+		if (exit_status != expected) {
 			let s = "expected ";
 			write_stderr("expected ");
 			write_stderr(strstatus(expected));
 			write_stderr(", got ");
-			write_stderr(strstatus(status));
+			write_stderr(strstatus(exit_status));
 			write_stderr("\n");
 			return error;
 		};
