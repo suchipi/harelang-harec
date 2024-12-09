@@ -258,6 +258,14 @@ fn for_each() void = {
 	};
 	assert(counter == 3);
 
+	let counter = 0;
+	for (let (string, count) .. pairs[..]) {
+		assert(string == pairs[counter].0);
+		assert(count == pairs[counter].1);
+		counter += 1;
+	};
+	assert(counter == 3);
+
 	let counter = 1u32;
 	for (let x: *u32 &.. [1, 2, 3]) {
 		assert(*x == counter);

@@ -2103,7 +2103,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		pushprei(ctx->current, &qcur_object, alloc, &qcur_object_sz, NULL);
 
 		if (initializer_type->storage == STORAGE_ARRAY) {
-			gptr = mkgtemp(ctx, &builtin_type_uintptr, ".%d");
+			gptr = mkgtemp(ctx, var_type, ".%d");
 			qptr = mklval(ctx, &gptr);
 
 			pushi(ctx->current, &qptr, Q_COPY, &qinitializer, NULL);
@@ -2118,7 +2118,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 
 			gptr = (struct gen_value){
 				.kind = GV_TEMP,
-				.type = &builtin_type_uintptr,
+				.type = var_type,
 				.name = qptr.name
 			};
 		}
@@ -2157,7 +2157,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		}
 
 		if (kind == FOR_EACH_VALUE) {
-			gen_copy_aligned(ctx, gcur_object, gptr);
+			gen_store(ctx, gcur_object, gen_load(ctx, gptr));
 
 			struct binding_unpack *unpack =
 				expr->_for.bindings->binding.unpack;
