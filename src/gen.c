@@ -8,8 +8,6 @@
 #include "types.h"
 #include "util.h"
 
-#define EXPR_GEN_VALUE -1
-
 static const struct gen_value gv_void = {
 	.kind = GV_CONST,
 	.type = &builtin_type_void,
@@ -878,6 +876,39 @@ gen_expr_assign(struct gen_context *ctx, const struct expression *expr)
 }
 
 static struct gen_value
+gen_expr_binarithm_gv(struct gen_context *ctx, const struct type *result,
+		const struct type *ltype, const struct type *rtype, int op,
+		struct gen_value lvalue, struct gen_value rvalue)
+{
+	struct qbe_value qlval = mkqval(ctx, &lvalue);
+	struct qbe_value qrval = mkqval(ctx, &rvalue);
+	if (bin_extend[op][0]) {
+		qlval = extend(ctx, qlval, ltype);
+	}
+	if (bin_extend[op][1]) {
+		qrval = extend(ctx, qrval, rtype);
+	}
+
+	struct gen_value gresult = mkgtemp(ctx, result, ".%d");
+	struct qbe_value qresult = mkqval(ctx, &gresult);
+	assert((ltype->storage == STORAGE_STRING) == (rtype->storage == STORAGE_STRING));
+	if (ltype->storage == STORAGE_STRING) {
+		pushi(ctx->current, &qresult, Q_CALL,
+			&ctx->rt.strcmp, &qlval, &qrval, NULL);
+		if (op == BIN_NEQUAL) {
+			struct qbe_value one = constl(1);
+			pushi(ctx->current, &qresult, Q_XOR, &qresult, &one, NULL);
+		} else {
+			assert(op == BIN_LEQUAL);
+		}
+		return gresult;
+	}
+	enum qbe_instr instr = binarithm_for_op(ctx, op, ltype);
+	pushi(ctx->current, &qresult, instr, &qlval, &qrval, NULL);
+	return gresult;
+}
+
+static struct gen_value
 gen_expr_binarithm(struct gen_context *ctx, const struct expression *expr)
 {
 	const struct type *ltype = type_dealias(NULL, expr->binarithm.lvalue->result);
@@ -903,41 +934,16 @@ gen_expr_binarithm(struct gen_context *ctx, const struct expression *expr)
 		struct gen_value rval = gen_expr(ctx, expr->binarithm.rvalue);
 		struct qbe_value qrval = mkqval(ctx, &rval);
 		pushi(ctx->current, &qresult, Q_COPY, &qrval, NULL);
-		if (expr->binarithm.rvalue->result->storage != STORAGE_NEVER) {
+		if (rtype->storage != STORAGE_NEVER) {
 			pushi(ctx->current, NULL, Q_JMP, &bshort, NULL);
 		}
 		push(&ctx->current->body, &lshort);
 		return result;
 	}
-
 	struct gen_value lvalue = gen_expr(ctx, expr->binarithm.lvalue);
 	struct gen_value rvalue = gen_expr(ctx, expr->binarithm.rvalue);
-	struct qbe_value qlval = mkqval(ctx, &lvalue);
-	struct qbe_value qrval = mkqval(ctx, &rvalue);
-
-	if (bin_extend[expr->assign.op][0]) {
-		qlval = extend(ctx, qlval, ltype);
-	}
-	if (bin_extend[expr->assign.op][1]) {
-		qrval = extend(ctx, qrval, rtype);
-	}
-
-	assert((ltype->storage == STORAGE_STRING) == (rtype->storage == STORAGE_STRING));
-	if (ltype->storage == STORAGE_STRING) {
-		pushi(ctx->current, &qresult, Q_CALL,
-			&ctx->rt.strcmp, &qlval, &qrval, NULL);
-		if (expr->binarithm.op == BIN_NEQUAL) {
-			struct qbe_value one = constl(1);
-			pushi(ctx->current, &qresult, Q_XOR, &qresult, &one, NULL);
-		} else {
-			assert(expr->binarithm.op == BIN_LEQUAL);
-		}
-		return result;
-	}
-	enum qbe_instr instr = binarithm_for_op(ctx, expr->binarithm.op,
-		expr->binarithm.lvalue->result);
-	pushi(ctx->current, &qresult, instr, &qlval, &qrval, NULL);
-	return result;
+	return gen_expr_binarithm_gv(ctx, expr->result, ltype, rtype,
+			expr->binarithm.op, lvalue, rvalue);
 }
 
 static void
@@ -2945,24 +2951,9 @@ gen_expr_switch_with(struct gen_context *ctx,
 			struct qbe_statement lnextopt;
 			struct qbe_value bnextopt = mklabel(ctx, &lnextopt, ".%d");
 			struct gen_value test = gen_expr_literal(ctx, opt->value);
-			struct expression lvalue = {
-				.type = EXPR_GEN_VALUE,
-				.result = value.type,
-				.user = &value,
-			}, rvalue = {
-				.type = EXPR_GEN_VALUE,
-				.result = test.type,
-				.user = &test,
-			}, compare = {
-				.type = EXPR_BINARITHM,
-				.result = &builtin_type_bool,
-				.binarithm = {
-					.op = BIN_LEQUAL,
-					.lvalue = &lvalue,
-					.rvalue = &rvalue,
-				},
-			};
-			struct gen_value match = gen_expr(ctx, &compare);
+			struct gen_value match = gen_expr_binarithm_gv(ctx,
+				&builtin_type_bool, expr->_switch.value->result,
+				opt->value->result, BIN_LEQUAL, value, test);
 			struct qbe_value cond = mkqval(ctx, &match);
 			pushi(ctx->current, NULL, Q_JNZ,
 				&cond, &bmatch, &bnextopt, NULL);
@@ -3250,9 +3241,6 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 	case EXPR_DEFINE:
 	case EXPR_VAEND:
 		break;
-	// gen-specific psuedo-expressions
-	case EXPR_GEN_VALUE:
-		out = *(struct gen_value *)expr->user;
 	}
 
 	if (expr->result->storage == STORAGE_NEVER) {
