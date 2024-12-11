@@ -312,7 +312,7 @@ gen_access_ident(struct gen_context *ctx, const struct scope_object *obj)
 				return gb->value;
 			}
 		}
-		return gv_void;
+		abort();
 	case O_DECL:
 		return (struct gen_value){
 			.kind = GV_GLOBAL,
@@ -405,15 +405,24 @@ gen_expr_access_addr(struct gen_context *ctx, const struct expression *expr)
 	struct gen_value addr;
 	switch (expr->access.type) {
 	case ACCESS_IDENTIFIER:
+		if (expr->access.object->type->size == 0) {
+			return gv_void;
+		}
 		addr = gen_access_ident(ctx, expr->access.object);
 		break;
 	case ACCESS_INDEX:
 		addr = gen_access_index(ctx, expr);
 		break;
 	case ACCESS_FIELD:
+		if (expr->access._struct->result->size == 0) {
+			return gv_void;
+		}
 		addr = gen_access_field(ctx, expr);
 		break;
 	case ACCESS_TUPLE:
+		if (expr->access.tuple->result->size == 0) {
+			return gv_void;
+		}
 		addr = gen_access_value(ctx, expr);
 		break;
 	}
@@ -425,7 +434,7 @@ gen_expr_access(struct gen_context *ctx, const struct expression *expr)
 {
 	struct gen_value addr = gen_expr_access_addr(ctx, expr);
 	if (expr->result->size == 0) {
-		return addr;
+		return gv_void;
 	}
 	return gen_load(ctx, addr);
 }
@@ -555,7 +564,7 @@ gen_expr_alloc_with(struct gen_context *ctx,
 	return result;
 }
 
-static struct gen_value
+static void
 gen_expr_assert(struct gen_context *ctx, const struct expression *expr)
 {
 	struct qbe_statement failedl, passedl;
@@ -592,8 +601,6 @@ gen_expr_assert(struct gen_context *ctx, const struct expression *expr)
 	if (expr->assert.cond) {
 		push(&ctx->current->body, &passedl);
 	}
-
-	return gv_void;
 }
 
 static void
@@ -686,7 +693,7 @@ gen_subslice_info(struct gen_context *ctx, const struct expression *expr,
 	push(&ctx->current->body, &lvalid);
 }
 
-static struct gen_value
+static void
 gen_expr_assign_slice_expandable(struct gen_context *ctx, struct qbe_value obase,
 		struct qbe_value ostart, struct qbe_value olen,
 		const struct expression *rvalue)
@@ -715,11 +722,9 @@ gen_expr_assign_slice_expandable(struct gen_context *ctx, struct qbe_value obase
 	pushi(ctx->current, &olen, Q_MUL, &olen, &sz, NULL);
 	pushi(ctx->current, &olen, Q_SUB, &olen, &noffset, NULL);
 	pushi(ctx->current, NULL, Q_CALL, &ctx->rt.memcpy, &next, &last, &olen, NULL);
-
-	return gv_void;
 }
 
-static struct gen_value
+static void
 gen_expr_assign_slice(struct gen_context *ctx, const struct expression *expr)
 {
 	assert(expr->assign.object->type == EXPR_SLICE);
@@ -744,8 +749,9 @@ gen_expr_assign_slice(struct gen_context *ctx, const struct expression *expr)
 
 	const struct type *vtype = type_dealias(NULL, expr->assign.value->result);
 	if (vtype->storage == STORAGE_ARRAY && vtype->array.expandable) {
-		return gen_expr_assign_slice_expandable(ctx, optr, ostart,
+		gen_expr_assign_slice_expandable(ctx, optr, ostart,
 			olen, expr->assign.value);
+		return;
 	}
 
 	struct gen_value val = gen_expr(ctx, expr->assign.value);
@@ -765,8 +771,6 @@ gen_expr_assign_slice(struct gen_context *ctx, const struct expression *expr)
 	pushi(ctx->current, &vptr, Q_LOADL, &qval, NULL);
 	pushi(ctx->current, &olen, Q_MUL, &olen, &tmp, NULL);
 	pushi(ctx->current, NULL, Q_CALL, &ctx->rt.memmove, &optr, &vptr, &olen, NULL);
-
-	return gv_void;
 }
 
 static struct qbe_value
@@ -811,13 +815,14 @@ bool bin_extend[BIN_LAST + 1][2] = {
 	[BIN_BXOR] = { false, false },
 };
 
-static struct gen_value
+static void
 gen_expr_assign(struct gen_context *ctx, const struct expression *expr)
 {
 	struct expression *object = expr->assign.object;
 	struct expression *value = expr->assign.value;
 	if (object->type == EXPR_SLICE) {
-		return gen_expr_assign_slice(ctx, expr);
+		gen_expr_assign_slice(ctx, expr);
+		return;
 	}
 
 	struct gen_value obj;
@@ -834,7 +839,9 @@ gen_expr_assign(struct gen_context *ctx, const struct expression *expr)
 	default:
 		abort(); // Invariant
 	}
-	if (expr->assign.op == BIN_LEQUAL || value->result->storage == STORAGE_NEVER) {
+	if (value->result->storage == STORAGE_NEVER || value->result->size == 0) {
+		gen_expr(ctx, value);
+	} else if (expr->assign.op == BIN_LEQUAL) {
 		struct gen_value rvalue = gen_expr(ctx, value);
 		gen_store(ctx, obj, rvalue);
 	} else if (expr->assign.op == BIN_LAND || expr->assign.op == BIN_LOR) {
@@ -868,8 +875,6 @@ gen_expr_assign(struct gen_context *ctx, const struct expression *expr)
 		pushi(ctx->current, &qlval, instr, &ilval, &qrval, NULL);
 		gen_store(ctx, obj, lvalue);
 	}
-
-	return gv_void;
 }
 
 static struct gen_value
@@ -999,7 +1004,7 @@ gen_expr_binding_unpack(struct gen_context *ctx,
 	}
 }
 
-static struct gen_value
+static void
 gen_expr_binding(struct gen_context *ctx, const struct expression *expr)
 {
 	for (const struct expression_binding *binding = &expr->binding;
@@ -1045,10 +1050,9 @@ gen_expr_binding(struct gen_context *ctx, const struct expression *expr)
 		pushprei(ctx->current, &qv, alloc, &sz, NULL);
 		gen_expr_at(ctx, binding->initializer, gb->value);
 	}
-	return gv_void;
 }
 
-static struct gen_value
+static void
 gen_expr_control(struct gen_context *ctx, const struct expression *expr)
 {
 	struct gen_scope *scope = gen_scope_lookup(ctx, expr->control.scope);
@@ -1056,7 +1060,7 @@ gen_expr_control(struct gen_context *ctx, const struct expression *expr)
 	if (expr->control.value) {
 		gen_expr_branch(ctx, expr->control.value, scope->result, scope->out);
 		if (expr->control.value->result->storage == STORAGE_NEVER) {
-			return gv_void;
+			return;
 		}
 	}
 
@@ -1084,7 +1088,6 @@ gen_expr_control(struct gen_context *ctx, const struct expression *expr)
 		break;
 	default: abort(); // Invariant
 	}
-	return gv_void;
 }
 
 static struct gen_value
@@ -1133,7 +1136,7 @@ gen_expr_call(struct gen_context *ctx, const struct expression *expr)
 		}
 		args = *next = xcalloc(1, sizeof(struct qbe_arguments));
 		if (carg->value->result->storage == STORAGE_NEVER) {
-			return rval;
+			return gv_void;
 		}
 		args->value = mkqval(ctx, &arg);
 		args->value.type = qtype_lookup(ctx, carg->value->result, true);
@@ -1993,17 +1996,16 @@ gen_expr_literal(struct gen_context *ctx, const struct expression *expr)
 	abort(); // Invariant
 }
 
-static struct gen_value
+static void
 gen_expr_defer(struct gen_context *ctx, const struct expression *expr)
 {
 	struct gen_defer *defer = xcalloc(1, sizeof(struct gen_defer));
 	defer->expr = expr;
 	defer->next = ctx->scope->defers;
 	ctx->scope->defers = defer;
-	return gv_void;
 }
 
-static struct gen_value
+static void
 gen_expr_delete(struct gen_context *ctx, const struct expression *expr)
 {
 	struct gen_value object;
@@ -2057,11 +2059,9 @@ gen_expr_delete(struct gen_context *ctx, const struct expression *expr)
 		pushi(ctx->current, NULL, Q_CALL, &ctx->rt.unensure, &qobj, &membsz,
 			NULL);
 	}
-
-	return gv_void;
 }
 
-static struct gen_value
+static void
 gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 {
 	struct qbe_statement lloop, lbody, lvalid, lafter, lend;
@@ -2313,15 +2313,14 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 	pushi(ctx->current, NULL, Q_JMP, &bloop, NULL);
 
 	push(&ctx->current->body, &lend);
-	return gv_void;
 }
 
-static struct gen_value
+static void
 gen_expr_free(struct gen_context *ctx, const struct expression *expr)
 {
 	const struct type *type = type_dealias(NULL, expr->free.expr->result);
 	if (type->storage == STORAGE_NULL) {
-		return gv_void;
+		return;
 	}
 	struct gen_value val = gen_expr(ctx, expr->free.expr);
 	struct qbe_value qval = mkqval(ctx, &val);
@@ -2331,7 +2330,6 @@ gen_expr_free(struct gen_context *ctx, const struct expression *expr)
 		pushi(ctx->current, &qval, Q_LOADL, &lval, NULL);
 	}
 	pushi(ctx->current, NULL, Q_CALL, &ctx->rt.free, &qval, NULL);
-	return gv_void;
 }
 
 static struct gen_value
@@ -2365,7 +2363,7 @@ gen_expr_if_with(struct gen_context *ctx,
 	return gvout;
 }
 
-static struct gen_value
+static void
 gen_expr_append_insert(struct gen_context *ctx, const struct expression *expr)
 {
 	assert(expr->type == EXPR_APPEND || expr->type == EXPR_INSERT);
@@ -2397,10 +2395,11 @@ gen_expr_append_insert(struct gen_context *ctx, const struct expression *expr)
 	struct qbe_value appendlen;
 	const struct type *valtype = type_dealias(NULL, expr->append.value->result);
 	if (expr->append.length != NULL) {
-		struct gen_value length = gen_expr(ctx, expr->append.length);
 		if (expr->append.length->result->storage == STORAGE_NEVER) {
-			return gv_void;
+			gen_expr(ctx, expr->append.length);
+			return;
 		}
+		struct gen_value length = gen_expr(ctx, expr->append.length);
 		appendlen = mkqval(ctx, &length);
 		assert(valtype->storage == STORAGE_ARRAY && valtype->array.expandable);
 	} else if (!expr->append.is_multi) {
@@ -2411,10 +2410,11 @@ gen_expr_append_insert(struct gen_context *ctx, const struct expression *expr)
 	struct qbe_value qvalue;
 	if (!expr->append.is_multi || valtype->storage != STORAGE_ARRAY) {
 		// We use gen_expr_at for the array case to avoid a copy
-		value = gen_expr(ctx, expr->append.value);
 		if (expr->append.value->result->storage == STORAGE_NEVER) {
-			return gv_void;
+			gen_expr(ctx, expr->append.value);
+			return;
 		}
+		value = gen_expr(ctx, expr->append.value);
 		qvalue = mkqval(ctx, &value);
 	}
 
@@ -2496,8 +2496,6 @@ gen_expr_append_insert(struct gen_context *ctx, const struct expression *expr)
 	} else {
 		gen_store(ctx, item, value);
 	}
-
-	return gv_void;
 }
 
 enum match_compat {
@@ -2845,13 +2843,14 @@ gen_expr_len(struct gen_context *ctx, const struct expression *expr)
 	};
 }
 
-static struct gen_value
+static void
 gen_expr_return(struct gen_context *ctx, const struct expression *expr)
 {
-	struct gen_value ret = gen_expr(ctx, expr->_return.value);
 	if (expr->_return.value->result->storage == STORAGE_NEVER) {
-		return gv_void;
+		gen_expr(ctx, expr->_return.value);
+		return;
 	}
+	struct gen_value ret = gen_expr(ctx, expr->_return.value);
 	for (struct gen_scope *scope = ctx->scope; scope; scope = scope->parent) {
 		gen_defers(ctx, scope);
 	}
@@ -2861,7 +2860,6 @@ gen_expr_return(struct gen_context *ctx, const struct expression *expr)
 		struct qbe_value qret = mkqval(ctx, &ret);
 		pushi(ctx->current, NULL, Q_RET, &qret, NULL);
 	}
-	return gv_void;
 }
 
 static void
@@ -3157,7 +3155,7 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 		pushi(ctx->current, NULL, Q_DBGLOC, &qline, &qcol, NULL);
 	}
 
-	struct gen_value out;
+	struct gen_value out = gv_void;
 	switch ((int)expr->type) {
 	case EXPR_ACCESS:
 		out = gen_expr_access(ctx, expr);
@@ -3167,24 +3165,24 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 		break;
 	case EXPR_APPEND:
 	case EXPR_INSERT:
-		out = gen_expr_append_insert(ctx, expr);
+		gen_expr_append_insert(ctx, expr);
 		break;
 	case EXPR_ASSERT:
-		out = gen_expr_assert(ctx, expr);
+		gen_expr_assert(ctx, expr);
 		break;
 	case EXPR_ASSIGN:
-		out = gen_expr_assign(ctx, expr);
+		gen_expr_assign(ctx, expr);
 		break;
 	case EXPR_BINARITHM:
 		out = gen_expr_binarithm(ctx, expr);
 		break;
 	case EXPR_BINDING:
-		out = gen_expr_binding(ctx, expr);
+		gen_expr_binding(ctx, expr);
 		break;
 	case EXPR_BREAK:
 	case EXPR_CONTINUE:
 	case EXPR_YIELD:
-		out = gen_expr_control(ctx, expr);
+		gen_expr_control(ctx, expr);
 		break;
 	case EXPR_CALL:
 		out = gen_expr_call(ctx, expr);
@@ -3199,16 +3197,16 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 		out = gen_expr_literal(ctx, expr);
 		break;
 	case EXPR_DEFER:
-		out = gen_expr_defer(ctx, expr);
+		gen_expr_defer(ctx, expr);
 		break;
 	case EXPR_DELETE:
-		out = gen_expr_delete(ctx, expr);
+		gen_expr_delete(ctx, expr);
 		break;
 	case EXPR_FOR:
-		out = gen_expr_for(ctx, expr);
+		gen_expr_for(ctx, expr);
 		break;
 	case EXPR_FREE:
-		out = gen_expr_free(ctx, expr);
+		gen_expr_free(ctx, expr);
 		break;
 	case EXPR_IF:
 		out = gen_expr_if_with(ctx, expr, NULL);
@@ -3222,7 +3220,7 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 	case EXPR_PROPAGATE:
 		assert(0); // Lowered in check (for now?)
 	case EXPR_RETURN:
-		out = gen_expr_return(ctx, expr);
+		gen_expr_return(ctx, expr);
 		break;
 	case EXPR_SWITCH:
 		out = gen_expr_switch_with(ctx, expr, NULL);
@@ -3232,7 +3230,6 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 		break;
 	case EXPR_VAARG:
 		out = gen_expr_vaarg(ctx, expr);
-		break;
 		break;
 	case EXPR_STRUCT:
 		out = gen_expr_struct(ctx, expr);
@@ -3249,14 +3246,13 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 		enum qbe_instr alloc = alloc_for_align(expr->result->align);
 		pushprei(ctx->current, &base, alloc, &sz, NULL);
 		gen_expr_at(ctx, expr, out);
-		return out;
+		break;
 	case EXPR_DEFINE:
 	case EXPR_VAEND:
-		out = gv_void; // no-op
 		break;
 	// gen-specific psuedo-expressions
 	case EXPR_GEN_VALUE:
-		return *(struct gen_value *)expr->user;
+		out = *(struct gen_value *)expr->user;
 	}
 
 	if (expr->result->storage == STORAGE_NEVER) {
@@ -3264,7 +3260,7 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 		struct qbe_statement dummyl;
 		mklabel(ctx, &dummyl, ".%d");
 		push(&ctx->current->body, &dummyl);
-		out.type = &builtin_type_never;
+		return gv_void;
 	}
 	return out;
 }
@@ -3314,10 +3310,11 @@ gen_expr_at(struct gen_context *ctx,
 		break; // Prefers non-at style
 	}
 
-	struct gen_value result = gen_expr(ctx, expr);
-	if (expr->result->storage != STORAGE_NEVER) {
-		gen_store(ctx, out, result);
+	if (expr->result->storage == STORAGE_NEVER) {
+		gen_expr(ctx, expr);
+		return;
 	}
+	gen_store(ctx, out, gen_expr(ctx, expr));
 }
 
 static void
@@ -3329,16 +3326,16 @@ gen_expr_branch(struct gen_context *ctx,
 	// Branching expressions written in the _with style may need to
 	// consolidate each branch's result into a single temporary to return to
 	// the caller. This function facilitates that.
-	if (out) {
+	if (expr->result->storage == STORAGE_NEVER || expr->result->size == 0) {
+		gen_expr(ctx, expr);
+	} else if (out) {
 		gen_expr_at(ctx, expr, *out);
-	} else if (expr->result->size != 0 && expr->result->storage != STORAGE_NEVER) {
+	} else {
 		assert(expr->result == merged.type);
 		struct gen_value result = gen_expr(ctx, expr);
 		struct qbe_value qresult = mkqval(ctx, &result);
 		struct qbe_value qmerged = mkqval(ctx, &merged);
 		pushi(ctx->current, &qmerged, Q_COPY, &qresult, NULL);
-	} else {
-		gen_expr(ctx, expr);
 	}
 }
 
