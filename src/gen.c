@@ -1194,7 +1194,7 @@ static struct gen_value gen_subset_match_tests(struct gen_context *ctx,
 static struct gen_value gen_nested_match_tests(struct gen_context *ctx,
 		struct gen_value object, struct qbe_value bmatch,
 		struct qbe_value bnext, struct qbe_value tag,
-		const struct type *type);
+		const struct type *type, const struct type *subtype);
 
 static struct gen_value
 gen_type_assertion_or_test(struct gen_context *ctx,
@@ -1217,7 +1217,7 @@ gen_type_assertion_or_test(struct gen_context *ctx,
 	struct gen_value result = {0};
 	if (tagged_select_subtype(NULL, expr->cast.value->result, want, true)) {
 		result = gen_nested_match_tests(ctx, base, bpassed,
-				bfailed, tag, want);
+				bfailed, tag, expr->cast.value->result, want);
 	} else if (tagged_subset_compat(NULL, expr->cast.value->result, want)) {
 		result = gen_subset_match_tests(ctx, bpassed, bfailed, tag,
 				type_dealias(NULL, want));
@@ -1275,16 +1275,9 @@ gen_expr_cast_tagged_at(struct gen_context *ctx,
 
 	if (!subtype) {
 		// Compatible tagged unions
-		//
-		// Create a new "out" parameter with the same storage location
-		// as the target of this expression, but with the "from" type.
-		// The "from" type is a tagged union and will produce a
-		// compatible tagged union when evaluated there.
-		struct gen_value out2 = out;
-		out2.type = from;
-		gen_expr_at(ctx, expr->cast.value, out2);
+		gen_expr_at(ctx, expr->cast.value, out);
 		if (expr->cast.kind == C_ASSERTION) {
-			gen_type_assertion_or_test(ctx, expr, out2);
+			gen_type_assertion_or_test(ctx, expr, out);
 		}
 	} else {
 		// "from" is a member of "to"
@@ -2565,7 +2558,7 @@ nested_tagged_offset(const struct type *tu, const struct type *target)
 static struct gen_value
 gen_nested_match_tests(struct gen_context *ctx, struct gen_value object,
 	struct qbe_value bmatch, struct qbe_value bnext,
-	struct qbe_value tag, const struct type *subtype)
+	struct qbe_value tag, const struct type *type, const struct type *subtype)
 {
 	// This function handles the case where we're matching against a type
 	// which is a member of the tagged union, or an inner tagged union.
@@ -2588,7 +2581,6 @@ gen_nested_match_tests(struct gen_context *ctx, struct gen_value object,
 	struct gen_value match = mkgtemp(ctx, &builtin_type_bool, ".%d");
 	struct qbe_value qmatch = mkqval(ctx, &match);
 	struct qbe_value temp = mkqtmp(ctx, &qbe_word, ".%d");
-	const struct type *type = object.type;
 	const struct type *test = subtype;
 	do {
 		struct qbe_statement lsubtype;
@@ -2678,7 +2670,6 @@ gen_expr_match_with(struct gen_context *ctx,
 		is_nullable_ptr = (objtype->pointer.flags & PTR_NULLABLE) > 0;
 		ref_type = type_dealias(NULL, objtype->pointer.referent);
 		is_tagged_ptr = ref_type->storage == STORAGE_TAGGED;
-		object.type = ref_type;
 	}
 	assert(is_tagged || is_nullable_ptr || is_tagged_ptr);
 
@@ -2779,7 +2770,7 @@ gen_expr_match_with(struct gen_context *ctx,
 			enum match_compat compat = COMPAT_SUBTYPE;
 			if (subtype) {
 				gen_nested_match_tests(ctx, object,
-					bmatch, bnext, tag, case_tag_type);
+					bmatch, bnext, tag, ref_type, case_tag_type);
 			} else {
 				assert(type_dealias(NULL, case_tag_type)
 					->storage == STORAGE_TAGGED);
