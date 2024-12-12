@@ -1766,17 +1766,15 @@ gen_literal_slice_at(struct gen_context *ctx,
 {
 	struct array_literal *aexpr = expr->literal.slice.array;
 
-	enum qbe_instr store = store_for_type(ctx, &builtin_type_size);
-	struct qbe_value base = mklval(ctx, &out);
-
 	struct qbe_type *qt = xcalloc(1, sizeof(struct qbe_type));
 	qt->stype = Q_LONG;
-	struct qbe_value obj = mkqtmp(ctx, qt, "object.%d");
+	struct qbe_value obj;
 
 	if (expr->literal.object == NULL && aexpr != NULL) {
 		// slicing a literal array
 
 		struct expression *first = aexpr->value;
+		obj = mkqtmp(ctx, qt, "object.%d");
 
 		size_t n = 0;
 		struct gen_value item = mkgtemp(ctx, first->result, "item.%d");
@@ -1795,12 +1793,9 @@ gen_literal_slice_at(struct gen_context *ctx,
 		struct qbe_value offset =
 			constl(expr->literal.slice.start * first->result->size);
 		pushi(ctx->current, &obj, Q_ADD, &obj, &offset, NULL);
-		pushi(ctx->current, NULL, store, &obj, &base, NULL);
 	} else if (expr->literal.object == NULL) {
 		// slicing an empty array
-
-		struct qbe_value tmp = constl(0);
-		pushi(ctx->current, NULL, store, &tmp, &base, NULL);
+		obj = constl(0);
 	} else {
 		// slicing an access expression
 
@@ -1812,19 +1807,14 @@ gen_literal_slice_at(struct gen_context *ctx,
 		size_t offs = expr->literal.slice.offset;
 		offs += expr->literal.slice.start * otype->size;
 		struct qbe_value qoffs = constl(offs);
+		obj = mkqtmp(ctx, qt, "object.%d");
 		pushi(ctx->current, &obj, Q_ADD, &tmp, &qoffs, NULL);
-		pushi(ctx->current, NULL, store, &obj, &base, NULL);
 	}
 
-	struct qbe_value qptr = mkqtmp(ctx, ctx->arch.ptr, ".%d");
-	struct qbe_value sz = constl(builtin_type_size.size);
+	struct gen_slice sl = gen_slice_ptrs(ctx, out);
 	struct qbe_value len = constl(expr->literal.slice.len);
 	struct qbe_value cap = constl(expr->literal.slice.cap);
-
-	pushi(ctx->current, &qptr, Q_ADD, &base, &sz, NULL);
-	pushi(ctx->current, NULL, store, &len, &qptr, NULL);
-	pushi(ctx->current, &qptr, Q_ADD, &qptr, &sz, NULL);
-	pushi(ctx->current, NULL, store, &cap, &qptr, NULL);
+	store_slice_data(ctx, &sl, &obj, &len, &cap);
 }
 
 static struct qbe_data_item *gen_data_item(struct gen_context *,
