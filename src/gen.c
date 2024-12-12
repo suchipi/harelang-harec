@@ -1765,16 +1765,12 @@ gen_literal_slice_at(struct gen_context *ctx,
 	struct gen_value out)
 {
 	struct array_literal *aexpr = expr->literal.slice.array;
-
-	struct qbe_type *qt = xcalloc(1, sizeof(struct qbe_type));
-	qt->stype = Q_LONG;
 	struct qbe_value obj;
-
 	if (expr->literal.object == NULL && aexpr != NULL) {
 		// slicing a literal array
 
 		struct expression *first = aexpr->value;
-		obj = mkqtmp(ctx, qt, "object.%d");
+		obj = mkqtmp(ctx, ctx->arch.ptr, "object.%d");
 
 		size_t n = 0;
 		struct gen_value item = mkgtemp(ctx, first->result, "item.%d");
@@ -1807,7 +1803,7 @@ gen_literal_slice_at(struct gen_context *ctx,
 		size_t offs = expr->literal.slice.offset;
 		offs += expr->literal.slice.start * otype->size;
 		struct qbe_value qoffs = constl(offs);
-		obj = mkqtmp(ctx, qt, "object.%d");
+		obj = mkqtmp(ctx, ctx->arch.ptr, "object.%d");
 		pushi(ctx->current, &obj, Q_ADD, &tmp, &qoffs, NULL);
 	}
 
