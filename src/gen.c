@@ -2565,7 +2565,7 @@ nested_tagged_offset(const struct type *tu, const struct type *target)
 static struct gen_value
 gen_nested_match_tests(struct gen_context *ctx, struct gen_value object,
 	struct qbe_value bmatch, struct qbe_value bnext,
-	struct qbe_value tag, const struct type *type)
+	struct qbe_value tag, const struct type *subtype)
 {
 	// This function handles the case where we're matching against a type
 	// which is a member of the tagged union, or an inner tagged union.
@@ -2588,16 +2588,16 @@ gen_nested_match_tests(struct gen_context *ctx, struct gen_value object,
 	struct gen_value match = mkgtemp(ctx, &builtin_type_bool, ".%d");
 	struct qbe_value qmatch = mkqval(ctx, &match);
 	struct qbe_value temp = mkqtmp(ctx, &qbe_word, ".%d");
-	const struct type *subtype = object.type;
-	const struct type *test = type;
+	const struct type *type = object.type;
+	const struct type *test = subtype;
 	do {
 		struct qbe_statement lsubtype;
 		struct qbe_value bsubtype = mklabel(ctx, &lsubtype, "subtype.%d");
 
-		if (type_dealias(NULL, subtype)->storage != STORAGE_TAGGED) {
+		if (type_dealias(NULL, type)->storage != STORAGE_TAGGED) {
 			break;
 		}
-		test = tagged_select_subtype(NULL, subtype, type, false);
+		test = tagged_select_subtype(NULL, type, subtype, false);
 		if (!test) {
 			break;
 		}
@@ -2611,8 +2611,8 @@ gen_nested_match_tests(struct gen_context *ctx, struct gen_value object,
 		// object, where we're testing for a type within that subset,
 		// move the pointer to this tagged union and continue looking
 		// for the relevant type ID there.
-		if (test->id != type->id
-				&& type_dealias(NULL, test)->id != type->id
+		if (test->id != subtype->id
+				&& type_dealias(NULL, test)->id != subtype->id
 				&& type_dealias(NULL, test)->storage == STORAGE_TAGGED) {
 			struct qbe_value offs =
 				compute_tagged_memb_offset(test);
@@ -2621,8 +2621,8 @@ gen_nested_match_tests(struct gen_context *ctx, struct gen_value object,
 			subtag = &temp;
 		}
 
-		subtype = test;
-	} while (test->id != type->id && type_dealias(NULL, test)->id != type->id);
+		type = test;
+	} while (test->id != subtype->id && type_dealias(NULL, test)->id != subtype->id);
 
 	pushi(ctx->current, NULL, Q_JMP, &bmatch, NULL);
 	return match;
