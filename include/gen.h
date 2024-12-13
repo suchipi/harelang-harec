@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include "identifier.h"
 #include "qbe.h"
-#include "type_store.h"
 #include "types.h"
 #include "scope.h"
 

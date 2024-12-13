@@ -5,7 +5,6 @@
 #include "expr.h"
 #include "gen.h"
 #include "scope.h"
-#include "type_store.h"
 #include "types.h"
 #include "util.h"
 
