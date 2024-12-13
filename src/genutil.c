@@ -113,29 +113,6 @@ mklabel(struct gen_context *ctx, struct qbe_statement *stmt, const char *fmt)
 	};
 }
 
-void
-branch_copyresult(struct gen_context *ctx,
-	struct gen_value result,
-	struct gen_value merged,
-	struct gen_value *out)
-{
-	// Branching expressions written in the _with style may need to
-	// consolodate each branch's result into a single temporary to return to
-	// the caller. This function facilitates that.
-	if (out
-		|| type_dealias(NULL, merged.type)->storage == STORAGE_VOID
-		|| type_dealias(NULL, merged.type)->storage == STORAGE_DONE
-		|| merged.type->storage == STORAGE_NEVER
-		|| type_dealias(NULL, result.type)->storage == STORAGE_VOID
-		|| type_dealias(NULL, result.type)->storage == STORAGE_DONE
-		|| result.type->storage == STORAGE_NEVER) {
-		return;
-	}
-	struct qbe_value qmerged = mkqval(ctx, &merged);
-	struct qbe_value qval = mkqval(ctx, &result);
-	pushi(ctx->current, &qmerged, Q_COPY, &qval, NULL);
-}
-
 struct qbe_value
 compute_tagged_memb_offset(const struct type *subtype)
 {

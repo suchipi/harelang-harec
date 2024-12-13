@@ -20,8 +20,8 @@ static struct gen_value gen_expr(struct gen_context *ctx,
 static void gen_expr_at(struct gen_context *ctx,
 	const struct expression *expr,
 	struct gen_value out);
-static struct gen_value gen_expr_with(struct gen_context *ctx,
-	const struct expression *expr,
+static void gen_expr_branch(struct gen_context *ctx,
+	const struct expression *expr, struct gen_value merged,
 	struct gen_value *out);
 static void gen_global_decl(struct gen_context *ctx,
 	const struct declaration *decl);
@@ -1075,10 +1075,7 @@ gen_expr_control(struct gen_context *ctx, const struct expression *expr)
 	struct gen_scope *scope = gen_scope_lookup(ctx, expr->control.scope);
 
 	if (expr->control.value) {
-		struct gen_value result = gen_expr_with(ctx,
-			expr->control.value, scope->out);
-		branch_copyresult(ctx, result,
-			scope->result, scope->out);
+		gen_expr_branch(ctx, expr->control.value, scope->result, scope->out);
 		if (expr->control.value->result->storage == STORAGE_NEVER) {
 			return gv_void;
 		}
@@ -1707,8 +1704,7 @@ gen_expr_compound_with(struct gen_context *ctx,
 		gen_expr(ctx, exprs->expr);
 	}
 
-	struct gen_value last = gen_expr_with(ctx, exprs->expr, out);
-	branch_copyresult(ctx, last, gvout, out);
+	gen_expr_branch(ctx, exprs->expr, gvout, out);
 	pop_scope(ctx);
 	push(&ctx->current->body, &lend);
 	return gvout;
@@ -2351,17 +2347,14 @@ gen_expr_if_with(struct gen_context *ctx,
 	pushi(ctx->current, NULL, Q_JNZ, &qcond, &btrue, &bfalse, NULL);
 
 	push(&ctx->current->body, &ltrue);
-	struct gen_value vtrue = gen_expr_with(ctx, expr->_if.true_branch, out);
-	branch_copyresult(ctx, vtrue, gvout, out);
+	gen_expr_branch(ctx, expr->_if.true_branch, gvout, out);
 	if (expr->_if.true_branch->result->storage != STORAGE_NEVER) {
 		pushi(ctx->current, NULL, Q_JMP, &bend, NULL);
 	}
 
 	push(&ctx->current->body, &lfalse);
 	if (expr->_if.false_branch) {
-		struct gen_value vfalse = gen_expr_with(ctx,
-				expr->_if.false_branch, out);
-		branch_copyresult(ctx, vfalse, gvout, out);
+		gen_expr_branch(ctx, expr->_if.false_branch, gvout, out);
 	} else if (expr->result->storage == STORAGE_TAGGED) {
 		// if false branch is absent, store void tag
 		struct qbe_value qout = mkqval(ctx, out ? out : &gvout);
@@ -2694,7 +2687,6 @@ gen_expr_match_with(struct gen_context *ctx,
 	if (!out) {
 		gvout = mkgtemp(ctx, expr->result, ".%d");
 	}
-	struct gen_value bval;
 	struct qbe_statement lout;
 	struct qbe_value bout = mklabel(ctx, &lout, ".%d");
 
@@ -2712,8 +2704,7 @@ gen_expr_match_with(struct gen_context *ctx,
 		pushi(ctx->current, NULL, Q_JNZ, &cmpres, where, &bnext, NULL);
 		push(&ctx->current->body, &lmatch);
 		if (null_case) {
-			bval = gen_expr_with(ctx, null_case->value, out);
-			branch_copyresult(ctx, bval, gvout, out);
+			gen_expr_branch(ctx, null_case->value, gvout, out);
 			if (null_case->value->result->storage != STORAGE_NEVER) {
 				pushi(ctx->current, NULL, Q_JMP, &bout, NULL);
 			}
@@ -2828,8 +2819,7 @@ gen_expr_match_with(struct gen_context *ctx,
 				}
 			}
 		}
-		bval = gen_expr_with(ctx, c->value, out);
-		branch_copyresult(ctx, bval, gvout, out);
+		gen_expr_branch(ctx, c->value, gvout, out);
 		if (c->value->result->storage != STORAGE_NEVER) {
 			pushi(ctx->current, NULL, Q_JMP, &bout, NULL);
 		}
@@ -2838,8 +2828,7 @@ gen_expr_match_with(struct gen_context *ctx,
 
 	if (default_case) {
 		push(&ctx->current->body, &ldefault);
-		bval = gen_expr_with(ctx, default_case->value, out);
-		branch_copyresult(ctx, bval, gvout, out);
+		gen_expr_branch(ctx, default_case->value, gvout, out);
 		if (default_case->value->result->storage != STORAGE_NEVER) {
 			pushi(ctx->current, NULL, Q_JMP, &bout, NULL);
 		}
@@ -2958,7 +2947,6 @@ gen_expr_switch_with(struct gen_context *ctx,
 	struct qbe_value bout = mklabel(ctx, &lout, ".%d");
 	struct gen_value value = gen_expr(ctx, expr->_switch.value);
 
-	struct gen_value bval;
 	const struct switch_case *_default = NULL;
 	for (const struct switch_case *_case = expr->_switch.cases;
 			_case; _case = _case->next) {
@@ -3002,8 +2990,7 @@ gen_expr_switch_with(struct gen_context *ctx,
 
 		pushi(ctx->current, NULL, Q_JMP, &bnextcase, NULL);
 		push(&ctx->current->body, &lmatch);
-		bval = gen_expr_with(ctx, _case->value, out);
-		branch_copyresult(ctx, bval, gvout, out);
+		gen_expr_branch(ctx, _case->value, gvout, out);
 		if (_case->value->result->storage != STORAGE_NEVER) {
 			pushi(ctx->current, NULL, Q_JMP, &bout, NULL);
 		}
@@ -3011,8 +2998,7 @@ gen_expr_switch_with(struct gen_context *ctx,
 	}
 
 	if (_default) {
-		bval = gen_expr_with(ctx, _default->value, out);
-		branch_copyresult(ctx, bval, gvout, out);
+		gen_expr_branch(ctx, _default->value, gvout, out);
 		if (_default->value->result->storage != STORAGE_NEVER) {
 			pushi(ctx->current, NULL, Q_JMP, &bout, NULL);
 		}
@@ -3352,16 +3338,26 @@ gen_expr_at(struct gen_context *ctx,
 	}
 }
 
-static struct gen_value
-gen_expr_with(struct gen_context *ctx,
+static void
+gen_expr_branch(struct gen_context *ctx,
 	const struct expression *expr,
+	struct gen_value merged,
 	struct gen_value *out)
 {
+	// Branching expressions written in the _with style may need to
+	// consolidate each branch's result into a single temporary to return to
+	// the caller. This function facilitates that.
 	if (out) {
 		gen_expr_at(ctx, expr, *out);
-		return *out;
+	} else if (expr->result->size != 0 && expr->result->storage != STORAGE_NEVER) {
+		assert(expr->result == merged.type);
+		struct gen_value result = gen_expr(ctx, expr);
+		struct qbe_value qresult = mkqval(ctx, &result);
+		struct qbe_value qmerged = mkqval(ctx, &merged);
+		pushi(ctx->current, &qmerged, Q_COPY, &qresult, NULL);
+	} else {
+		gen_expr(ctx, expr);
 	}
-	return gen_expr(ctx, expr);
 }
 
 static void
