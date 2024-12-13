@@ -1,4 +1,4 @@
-export @symbol("write") fn write(fd: int, buf: *const opaque, count: size) int;
+export @symbol("write") fn write(fd: int, buf: *const opaque, count: size) size;
 
 export @symbol("close") fn close(fd: int) int;
 
