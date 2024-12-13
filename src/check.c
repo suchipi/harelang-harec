@@ -2276,19 +2276,21 @@ check_expr_if(struct context *ctx,
 {
 	expr->type = EXPR_IF;
 
-	struct expression *cond, *true_branch, *false_branch = NULL;
+	struct expression *cond, *true_branch, *false_branch;
 
 	cond = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aexpr->_if.cond, cond, &builtin_type_bool);
 
 	true_branch = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aexpr->_if.true_branch, true_branch, hint);
-	const struct type *fresult = &builtin_type_void;
+	false_branch = xcalloc(1, sizeof(struct expression));
 	if (aexpr->_if.false_branch) {
-		false_branch = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, aexpr->_if.false_branch, false_branch, hint);
-		fresult = false_branch->result;
+	} else {
+		false_branch->type = EXPR_LITERAL;
+		false_branch->result = &builtin_type_void;
 	}
+	const struct type *fresult = false_branch->result;
 	if (hint && type_is_assignable(ctx, hint, true_branch->result)
 			&& type_is_assignable(ctx, hint, fresult)) {
 		expr->result = hint;
@@ -2308,9 +2310,7 @@ check_expr_if(struct context *ctx,
 		}
 	}
 	true_branch = lower_implicit_cast(ctx, expr->result, true_branch);
-	if (false_branch != NULL) {
-		false_branch = lower_implicit_cast(ctx, expr->result, false_branch);
-	}
+	false_branch = lower_implicit_cast(ctx, expr->result, false_branch);
 
 	if (cond->result->storage == STORAGE_ERROR) {
 		mkerror(expr);
