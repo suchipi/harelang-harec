@@ -265,6 +265,6 @@ export fn main() void = {
 	zerosizeparams();
 	reject();
 	optional_params();
-	_never();
 	initfini();
+	_never();
 };
