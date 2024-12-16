@@ -237,8 +237,9 @@ gen_fixed_assert(struct gen_context *ctx,
 }
 
 static struct gen_value
-gen_autoderef(struct gen_context *ctx, struct gen_value val)
+gen_autoderef_expr(struct gen_context *ctx, const struct expression *expr)
 {
+	struct gen_value val = gen_expr(ctx, expr);
 	while (type_dealias(NULL, val.type)->storage == STORAGE_POINTER) {
 		val.type = type_dealias(NULL, val.type)->pointer.referent;
 		val = gen_load(ctx, val);
@@ -330,8 +331,7 @@ gen_access_ident(struct gen_context *ctx, const struct scope_object *obj)
 static struct gen_value
 gen_access_index(struct gen_context *ctx, const struct expression *expr)
 {
-	struct gen_value glval = gen_expr(ctx, expr->access.array);
-	glval = gen_autoderef(ctx, glval);
+	struct gen_value glval = gen_autoderef_expr(ctx, expr->access.array);
 	struct qbe_value qival = mkqtmp(ctx, ctx->arch.ptr, ".%d");
 	bool checkbounds = !expr->access.bounds_checked;
 	struct qbe_value length, qlval;
@@ -374,8 +374,7 @@ static struct gen_value
 gen_access_field(struct gen_context *ctx, const struct expression *expr)
 {
 	const struct struct_field *field = expr->access.field;
-	struct gen_value glval = gen_expr(ctx, expr->access._struct);
-	glval = gen_autoderef(ctx, glval);
+	struct gen_value glval = gen_autoderef_expr(ctx, expr->access._struct);
 	if (field->type->size == 0) {
 		return gv_void;
 	}
@@ -394,8 +393,7 @@ static struct gen_value
 gen_access_value(struct gen_context *ctx, const struct expression *expr)
 {
 	const struct type_tuple *tuple = expr->access.tvalue;
-	struct gen_value glval = gen_expr(ctx, expr->access.tuple);
-	glval = gen_autoderef(ctx, glval);
+	struct gen_value glval = gen_autoderef_expr(ctx, expr->access.tuple);
 	if (tuple->type->size == 0) {
 		return gv_void;
 	}
@@ -744,8 +742,7 @@ gen_expr_assign_slice(struct gen_context *ctx, const struct expression *expr)
 {
 	assert(expr->assign.object->type == EXPR_SLICE);
 
-	struct gen_value obj = gen_expr(ctx, expr->assign.object->slice.object);
-	obj = gen_autoderef(ctx, obj);
+	struct gen_value obj = gen_autoderef_expr(ctx, expr->assign.object->slice.object);
 	const struct type *srctype = type_dealias(NULL, obj.type);
 
 	struct qbe_value optr, ostart, olen;
@@ -1111,9 +1108,7 @@ gen_expr_control(struct gen_context *ctx, const struct expression *expr)
 static struct gen_value
 gen_expr_call(struct gen_context *ctx, const struct expression *expr)
 {
-	struct gen_value lvalue = gen_expr(ctx, expr->call.lvalue);
-	lvalue = gen_autoderef(ctx, lvalue);
-
+	struct gen_value lvalue = gen_autoderef_expr(ctx, expr->call.lvalue);
 	const struct type *rtype = type_dealias(NULL, lvalue.type);
 	assert(rtype->storage == STORAGE_FUNCTION);
 
@@ -2002,15 +1997,14 @@ gen_expr_delete(struct gen_context *ctx, const struct expression *expr)
 	struct qbe_value qstart;
 	const struct expression *dexpr = expr->delete.expr;
 	if (dexpr->type == EXPR_SLICE) {
-		object = gen_expr(ctx, dexpr->slice.object);
+		object = gen_autoderef_expr(ctx, dexpr->slice.object);
 	} else {
 		assert(dexpr->type == EXPR_ACCESS
 			&& dexpr->access.type == ACCESS_INDEX);
-		object = gen_expr(ctx, dexpr->access.array);
+		object = gen_autoderef_expr(ctx, dexpr->access.array);
 		struct gen_value start = gen_expr(ctx, dexpr->access.index);
 		qstart = mkqval(ctx, &start);
 	}
-	object = gen_autoderef(ctx, object);
 	assert(type_dealias(NULL, object.type)->storage == STORAGE_SLICE);
 
 	struct qbe_value data, qlen, qcap;
@@ -2074,8 +2068,8 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 	}
 
 	if (kind == FOR_EACH_VALUE || kind == FOR_EACH_POINTER) {
-		ginitializer = gen_autoderef(ctx, gen_expr(ctx,
-			expr->_for.bindings->binding.initializer));
+		ginitializer = gen_autoderef_expr(ctx,
+				expr->_for.bindings->binding.initializer);
 		qinitializer = mklval(ctx, &ginitializer);
 
 		const struct type *initializer_type = type_dealias(NULL,
@@ -2364,14 +2358,13 @@ gen_expr_append_insert(struct gen_context *ctx, const struct expression *expr)
 	assert(expr->type == EXPR_APPEND || expr->type == EXPR_INSERT);
 	struct gen_value slice;
 	if (expr->type == EXPR_APPEND) {
-		slice = gen_expr(ctx, expr->append.object);
+		slice = gen_autoderef_expr(ctx, expr->append.object);
 	} else {
 		const struct expression *objexpr = expr->append.object;
 		assert(objexpr->type == EXPR_ACCESS
 			&& objexpr->access.type == ACCESS_INDEX);
-		slice = gen_expr(ctx, objexpr->access.array);
+		slice = gen_autoderef_expr(ctx, objexpr->access.array);
 	}
-	slice = gen_autoderef(ctx, slice);
 	struct qbe_value prevlen, cap;
 	struct gen_slice sl = gen_slice_ptrs(ctx, slice);
 	load_slice_data(ctx, &sl, NULL, &prevlen, expr->append.is_static ? &cap : NULL);
@@ -2837,7 +2830,7 @@ gen_expr_len(struct gen_context *ctx, const struct expression *expr)
 	assert(type != NULL);
 	type = type_dealias(NULL, type);
 	assert(type->storage == STORAGE_SLICE || type->storage == STORAGE_STRING);
-	struct gen_value gv = gen_autoderef(ctx, gen_expr(ctx, value));
+	struct gen_value gv = gen_autoderef_expr(ctx, value);
 	struct qbe_value len;
 	struct gen_slice sl = gen_slice_ptrs(ctx, gv);
 	load_slice_data(ctx, &sl, NULL, &len, NULL);
@@ -3004,8 +2997,7 @@ gen_expr_slice_at(struct gen_context *ctx,
 	const struct expression *expr,
 	struct gen_value out)
 {
-	struct gen_value object = gen_expr(ctx, expr->slice.object);
-	object = gen_autoderef(ctx, object);
+	struct gen_value object = gen_autoderef_expr(ctx, expr->slice.object);
 	const struct type *srctype = type_dealias(NULL, object.type);
 
 	struct qbe_value qbase, qstart, qnewlen, qnewcap;
