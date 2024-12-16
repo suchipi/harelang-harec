@@ -1188,40 +1188,62 @@ static struct gen_value gen_nested_match_tests(struct gen_context *ctx,
 		struct qbe_value bnext, struct qbe_value tag,
 		const struct type *type, const struct type *subtype);
 
-static struct gen_value
-gen_type_assertion_or_test(struct gen_context *ctx,
-	const struct expression *expr,
+static void
+gen_type_assertion_at(struct gen_context *ctx, const struct expression *expr,
 	struct gen_value base)
 {
-	assert(expr->cast.kind == C_TEST || expr->cast.kind == C_ASSERTION);
+	gen_expr_at(ctx, expr->cast.value, base);
+	assert(expr->cast.kind == C_ASSERTION);
 	const struct type *want = expr->cast.secondary;
 	struct qbe_value tag = mkqtmp(ctx, &qbe_word, ".%d");
 	struct qbe_value qbase = mkqval(ctx, &base);
 	gen_load_tag(ctx, &tag, &qbase, expr->cast.value->result);
 
 	struct qbe_statement failedl, passedl;
-	struct qbe_value bfailed, bpassed = mklabel(ctx, &passedl, "passed.%d");
-	if (expr->cast.kind == C_ASSERTION) {
-		bfailed = mklabel(ctx, &failedl, "failed.%d");
-	} else {
-		bfailed = bpassed;
-	}
-	struct gen_value result = {0};
+	struct qbe_value bfailed, bpassed;
+	bpassed = mklabel(ctx, &passedl, "passed.%d");
+	bfailed = mklabel(ctx, &failedl, "failed.%d");
+
 	if (tagged_select_subtype(NULL, expr->cast.value->result, want, true)) {
-		result = gen_nested_match_tests(ctx, base, bpassed,
+		gen_nested_match_tests(ctx, base, bpassed,
 				bfailed, tag, expr->cast.value->result, want);
 	} else if (tagged_subset_compat(NULL, expr->cast.value->result, want)) {
-		result = gen_subset_match_tests(ctx, bpassed, bfailed, tag,
+		gen_subset_match_tests(ctx, bpassed, bfailed, tag,
 				type_dealias(NULL, want));
 	} else {
 		abort();
 	}
 
-	if (expr->cast.kind == C_ASSERTION) {
-		push(&ctx->current->body, &failedl);
-		gen_fixed_abort(ctx, expr->loc, ABORT_TYPE_ASSERTION);
-	}
+	push(&ctx->current->body, &failedl);
+	gen_fixed_abort(ctx, expr->loc, ABORT_TYPE_ASSERTION);
 	push(&ctx->current->body, &passedl);
+}
+
+static struct gen_value
+gen_type_test(struct gen_context *ctx, const struct expression *expr)
+{
+	struct gen_value base = gen_expr(ctx, expr->cast.value);
+
+	assert(expr->cast.kind == C_TEST);
+	const struct type *want = expr->cast.secondary;
+	struct qbe_value tag = mkqtmp(ctx, &qbe_word, ".%d");
+	struct qbe_value qbase = mkqval(ctx, &base);
+	gen_load_tag(ctx, &tag, &qbase, expr->cast.value->result);
+
+	struct qbe_statement dummy;
+	struct qbe_value bdummy = mklabel(ctx, &dummy, "failed.%d");
+
+	struct gen_value result = {0};
+	if (tagged_select_subtype(NULL, expr->cast.value->result, want, true)) {
+		result = gen_nested_match_tests(ctx, base, bdummy,
+				bdummy, tag, expr->cast.value->result, want);
+	} else if (tagged_subset_compat(NULL, expr->cast.value->result, want)) {
+		result = gen_subset_match_tests(ctx, bdummy, bdummy, tag,
+				type_dealias(NULL, want));
+	} else {
+		abort();
+	}
+	push(&ctx->current->body, &dummy);
 	return result;
 }
 
@@ -1267,9 +1289,10 @@ gen_expr_cast_tagged_at(struct gen_context *ctx,
 
 	if (!subtype) {
 		// Compatible tagged unions
-		gen_expr_at(ctx, expr->cast.value, out);
 		if (expr->cast.kind == C_ASSERTION) {
-			gen_type_assertion_or_test(ctx, expr, out);
+			gen_type_assertion_at(ctx, expr, out);
+		} else {
+			gen_expr_at(ctx, expr->cast.value, out);
 		}
 	} else {
 		// "from" is a member of "to"
@@ -1421,8 +1444,7 @@ gen_expr_cast(struct gen_context *ctx, const struct expression *expr)
 				|| type_dealias(NULL, to)->storage == STORAGE_NULL);
 		assert(is_valid_tagged || is_valid_pointer);
 		if (expr->cast.kind == C_TEST && is_valid_tagged) {
-			return gen_type_assertion_or_test(ctx, expr,
-					gen_expr(ctx, expr->cast.value));
+			return gen_type_test(ctx, expr);
 		}
 	}
 
@@ -1484,11 +1506,20 @@ gen_expr_cast(struct gen_context *ctx, const struct expression *expr)
 
 	// Special case: tagged => non-tagged
 	if (type_dealias(NULL, from)->storage == STORAGE_TAGGED) {
-		struct gen_value value = gen_expr(ctx, expr->cast.value);
-		struct qbe_value base = mkcopy(ctx, &value, ".%d");
+		struct gen_value gbase;
 		if (expr->cast.kind == C_ASSERTION) {
-			gen_type_assertion_or_test(ctx, expr, value);
+			gbase = mkgtemp(ctx, expr->cast.value->result, ".%d");
+			struct qbe_value qbase = mkqval(ctx, &gbase);
+			enum qbe_instr alloc =
+				alloc_for_align(expr->cast.value->result->align);
+			struct qbe_value size =
+				constl(expr->cast.value->result->size);
+			pushi(ctx->current, &qbase, alloc, &size, NULL);
+			gen_type_assertion_at(ctx, expr, gbase);
+		} else {
+			gbase = gen_expr(ctx, expr->cast.value);
 		}
+		struct qbe_value base = mkcopy(ctx, &gbase, ".%d");
 
 		if (type_dealias(NULL, to)->size == 0) {
 			return gv_void;
