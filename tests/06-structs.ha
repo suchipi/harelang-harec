@@ -239,13 +239,8 @@ fn invariants() void = {
 	// Assign field from non-assignable type:
 	"fn test() void = { let x: struct { y: int } = struct { y: int = 10u }; };",
 
-	"
-	type coords = struct { x: int, y: int };
-
-	fn test() void = {
-		let x = coords { x: int = 10u, y: int = 20u };
-	};
-	",
+	"type coords = struct { x: int, y: int };"
+	"fn test() void = { let x = coords { x: int = 10u, y: int = 20u }; };",
 
 	// multiple initializations for single field
 	"type s = struct { x: int }; fn test() s = s { x = 5, x = 7 };",
@@ -257,30 +252,36 @@ fn invariants() void = {
 	"fn test() s = s { x = 5, x = 7 };",
 
 	// embedding a nonexistent identifier
-	"type t = struct { a, x: int };"
-	"type t = struct { x: int, a };"
+	"type t = struct { a, x: int };",
+	"type t = struct { x: int, a };",
+
 	// embedding a non-struct alias
-	"type a = str; type t = struct { a, x: int };"
-	"type a = str; type t = struct { x: int, a };"
+	"type a = str; type t = struct { a, x: int };",
+	"type a = str; type t = struct { x: int, a };",
+
 	// embedding a non-type object
-	"let a: int = 6; type t = struct { a, x: int };"
-	"let a: int = 6; type t = struct { x: int, a };"
+	"let a: int = 6; type t = struct { a, x: int };",
+	"let a: int = 6; type t = struct { x: int, a };",
 
 	// Duplicate members
-	"type s = struct { a: int, a: int };"
+	"type s = struct { a: int, a: int };",
 	"type s = struct { struct { a: int }, a: int };",
 	"type s = struct { a: int, struct { a: int } };",
 	"type embed = struct { a: int }; type s = struct { embed, a: int };",
 	"type embed = struct { a: int }; type s = struct { a: int, embed };",
 	"type embed = struct { a: int }; type s = struct { embed, embed };",
+
 	// Dereference non-nullable pointer:
 	"fn test() void = { let x: nullable *struct { y: int } = null; x.y; };",
+
 	// Select field from non-struct object:
 	"fn test() void = { let x = 10; x.y; };",
+
 	// Unknown field:
 	"fn test() void = { let x: struct { y: int } = struct { y: int = 10 }; x.z; };",
 	// Untyped field for unnamed struct:
 	"fn test() void = { let x = struct { x = 10 }; };",
+
 	// Members of undefined size before last
 	"type s = struct { x: [*]int, a: str };",
 
