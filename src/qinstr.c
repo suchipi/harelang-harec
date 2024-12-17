@@ -165,7 +165,6 @@ binarithm_for_op(struct gen_context *ctx,
 		enum binarithm_operator op,
 		const struct type *type)
 {
-	// TODO: NaN, udiv et al
 	bool is_signed = type_is_signed(NULL, type);
 	enum qbe_stype stype = qtype_lookup(ctx, type, false)->stype;
 	assert(stype != Q__AGGREGATE && stype != Q__VOID);
