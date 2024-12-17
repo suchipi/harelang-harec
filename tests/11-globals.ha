@@ -189,6 +189,7 @@ fn tagged() void = {
 	assert(t4.tag == u32_tag); // u32 type ID
 	assert(t4._u32 == 10);
 
+	static assert(align(u32) == 4 && align(u64) == 8); // XXX
 	let t8 = &tagged8: *struct {
 		tag: u32,
 		@offset(4) union {
@@ -200,6 +201,7 @@ fn tagged() void = {
 	assert(t8.tag == u32_tag); // u32 type ID
 	assert(t8._u32 == 10);
 
+	static assert(align(u32) == 4 && align(u64) == 8); // XXX
 	let t8 = &tagged8_u64: *struct {
 		tag: u32,
 		@offset(4) union {

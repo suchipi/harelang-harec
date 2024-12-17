@@ -26,6 +26,7 @@ fn measurements() void = {
 
 fn storage() void = {
 	let x: (u8 | u16 | u32 | u64) = 42u8;
+	static assert(align(u32) == 4 && align(u64) == 8); // XXX
 	const y = &x: *struct {
 		tag: u32,
 		@offset(4) union {

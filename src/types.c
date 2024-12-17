@@ -1113,12 +1113,15 @@ void
 builtin_types_init(const char *target)
 {
 	if (strcmp(target, "aarch64") == 0) {
+		builtin_type_f64.align = 8;
 		builtin_type_int.size = 4;
 		builtin_type_int.align = 4;
 		builtin_type_uint.size = 4;
 		builtin_type_uint.align = 4;
 		builtin_type_uintptr.size = 8;
 		builtin_type_uintptr.align = 8;
+		builtin_type_i64.align = 8;
+		builtin_type_u64.align = 8;
 		builtin_type_null.size = 8;
 		builtin_type_null.align = 8;
 		builtin_type_size.size = 8;
@@ -1128,12 +1131,15 @@ builtin_types_init(const char *target)
 		builtin_type_valist.size = 32;
 		builtin_type_valist.align = 8;
 	} else if (strcmp(target, "riscv64") == 0) {
+		builtin_type_f64.align = 8;
 		builtin_type_int.size = 4;
 		builtin_type_int.align = 4;
 		builtin_type_uint.size = 4;
 		builtin_type_uint.align = 4;
 		builtin_type_uintptr.size = 8;
 		builtin_type_uintptr.align = 8;
+		builtin_type_i64.align = 8;
+		builtin_type_u64.align = 8;
 		builtin_type_null.size = 8;
 		builtin_type_null.align = 8;
 		builtin_type_size.size = 8;
@@ -1143,12 +1149,15 @@ builtin_types_init(const char *target)
 		builtin_type_valist.size = 8;
 		builtin_type_valist.align = 8;
 	} else if (strcmp(target, "x86_64") == 0) {
+		builtin_type_f64.align = 8;
 		builtin_type_int.size = 4;
 		builtin_type_int.align = 4;
 		builtin_type_uint.size = 4;
 		builtin_type_uint.align = 4;
 		builtin_type_uintptr.size = 8;
 		builtin_type_uintptr.align = 8;
+		builtin_type_i64.align = 8;
+		builtin_type_u64.align = 8;
 		builtin_type_null.size = 8;
 		builtin_type_null.align = 8;
 		builtin_type_size.size = 8;
@@ -1195,7 +1204,6 @@ builtin_type_f32 = {
 builtin_type_f64 = {
 	.storage = STORAGE_F64,
 	.size = 8,
-	.align = 8,
 },
 builtin_type_i8 = {
 	.storage = STORAGE_I8,
@@ -1215,7 +1223,6 @@ builtin_type_i32 = {
 builtin_type_i64 = {
 	.storage = STORAGE_I64,
 	.size = 8,
-	.align = 8,
 },
 builtin_type_int = {
 	.storage = STORAGE_INT,
@@ -1254,7 +1261,6 @@ builtin_type_u32 = {
 builtin_type_u64 = {
 	.storage = STORAGE_U64,
 	.size = 8,
-	.align = 8,
 },
 builtin_type_uint = {
 	.storage = STORAGE_UINT,
