@@ -467,7 +467,7 @@ want_int:
 	};
 	if (suff) {
 		for (size_t i = 0; i < sizeof storages / sizeof storages[0]; i++) {
-			if (!strcmp(storages[i].suff, lexer->buf + suff)) {
+			if (strcmp(storages[i].suff, lexer->buf + suff) == 0) {
 				out->storage = storages[i].storage;
 				kind = storages[i].kind;
 				break;
