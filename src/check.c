@@ -599,7 +599,7 @@ check_expr_append_insert(struct context *ctx,
 			&& object->access.object->flags &
 				SO_FOR_EACH_SUBJECT) {
 		error(ctx, aexpr->append.object->loc, expr,
-			"cannot %s to subject of for-each loop", exprtype_name);
+			"cannot %s the subject of for-each loop", exprtype_name);
 	}
 	sltype = check_autodereference(ctx, aexpr->append.object->loc, sltypename);
 	sltype = type_dealias(ctx, sltype);
@@ -1844,7 +1844,7 @@ check_expr_delete(struct context *ctx,
 				&& array->access.object->flags &
 					SO_FOR_EACH_SUBJECT) {
 			error(ctx, aexpr->delete.expr->loc, expr,
-				"cannot delete to subject of for-each loop");
+				"cannot delete the subject of for-each loop");
 		}
 		otype = dexpr->access.array->result;
 		break;
@@ -2249,7 +2249,7 @@ check_expr_free(struct context *ctx,
 			&& expr->free.expr->access.object->flags
 				& SO_FOR_EACH_SUBJECT) {
 		error(ctx, aexpr->free.expr->loc, expr,
-			"cannot free to subject of for-each loop");
+			"cannot free the subject of for-each loop");
 	}
 
 	enum type_storage storage = type_dealias(ctx, expr->free.expr->result)->storage;
