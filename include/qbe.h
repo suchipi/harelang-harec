@@ -45,8 +45,7 @@ extern const struct qbe_type
 	qbe_long,
 	qbe_single,
 	qbe_double,
-	qbe_void,
-	qbe_aggregate;
+	qbe_void;
 
 enum qbe_value_kind {
 	QV_CONST,

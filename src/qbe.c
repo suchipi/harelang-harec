@@ -46,9 +46,6 @@ qbe_double = {
 },
 qbe_void = {
 	.stype = Q__VOID,
-},
-qbe_aggregate = {
-	.stype = Q__AGGREGATE,
 };
 
 const char *qbe_instr[Q_LAST_INSTR] = {
