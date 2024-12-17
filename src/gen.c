@@ -1581,7 +1581,7 @@ gen_expr_cast(struct gen_context *ctx, const struct expression *expr)
 		return gen_load(ctx, storage);
 	}
 
-	// Special case: cast to type that doesn't have a size
+	// Special case: cast to type with size zero
 	if (type_dealias(NULL, to)->size == 0) {
 		gen_expr(ctx, expr->cast.value); // Side-effects
 		return gv_void;
