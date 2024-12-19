@@ -39,3 +39,6 @@ export type uintptr_enum = enum uintptr {
 
 // ensure rt isn't imported in this subunit
 static assert(SIZE_RT_SLICE == size([]opaque));
+
+// ensure this produces valid code in a typedef
+export def ptr: *int = null: *int;

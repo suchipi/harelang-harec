@@ -88,7 +88,8 @@ emit_literal(const struct expression *expr, FILE *out)
 		break;
 	case STORAGE_POINTER: // TODO
 	case STORAGE_NULL:
-		xfprintf(out, "null");
+		xfprintf(out, "null: ");
+		emit_type(expr->result, out);
 		break;
 	case STORAGE_SIZE:
 	case STORAGE_U16:
