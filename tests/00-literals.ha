@@ -568,6 +568,14 @@ fn basics() void = {
 	compile(status::LEX, `let r = '\xah';`)!;
 	compile(status::LEX, `let r = '\uahij';`)!;
 	compile(status::LEX, `let r = '\Uahijklmn';`)!;
+	compile(status::LEX, `let r = '\x-0';`)!;
+	compile(status::LEX, `let r = '\x+a';`)!;
+	compile(status::LEX, `let r = '\x a';`)!;
+	compile(status::LEX, `let r = '\u-000';`)!;
+	compile(status::LEX, `let r = '\u+abc';`)!;
+	compile(status::LEX, `let r = '\u abc';`)!;
+	compile(status::LEX, `let r = '\U-abcdeff';`)!;
+	compile(status::LEX, `let r = '\U  +12345';`)!;
 };
 
 export fn main() void = {
