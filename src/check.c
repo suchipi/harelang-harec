@@ -1188,8 +1188,7 @@ check_expr_binarithm(struct context *ctx,
 	if (expr->result == NULL) {
 		char *ltypename = gen_typename(lvalue->result);
 		char *rtypename = gen_typename(rvalue->result);
-		error(ctx, aexpr->loc, expr,
-			"Cannot promote lvalue %s and rvalue %s",
+		error(ctx, aexpr->loc, expr, "Cannot promote %s and %s",
 			ltypename, rtypename);
 		free(ltypename);
 		free(rtypename);
@@ -2861,7 +2860,7 @@ check_expr_return(struct context *ctx,
 		char *rettypename = gen_typename(rval->result);
 		char *fntypename = gen_typename(ctx->fntype->func.result);
 		error(ctx, aexpr->loc, expr,
-			"Return value %s is not assignable to function result type %s",
+			"Return type %s is not assignable to function result type %s",
 			rettypename, fntypename);
 		free(rettypename);
 		free(fntypename);
@@ -3863,7 +3862,7 @@ check_function(struct context *ctx,
 		char *restypename = gen_typename(body->result);
 		char *fntypename = gen_typename(obj->type->func.result);
 		error(ctx, afndecl->body->loc, body,
-			"Result value %s is not assignable to function result type %s",
+			"Expression result type %s is not assignable to function result type %s",
 			restypename, fntypename);
 		free(restypename);
 		free(fntypename);
@@ -4252,7 +4251,7 @@ resolve_global(struct context *ctx, struct scope_object *obj)
 			&& decl->type->array.contextual;
 		if (context && !decl->init) {
 			error(ctx, decl->type->loc, NULL,
-				"Cannot infer array length without an init");
+				"Cannot infer array length without an initializer");
 			type = &builtin_type_error;
 			goto end;
 		}
@@ -4291,7 +4290,7 @@ resolve_global(struct context *ctx, struct scope_object *obj)
 		assert(type->size != SIZE_UNDEFINED);
 		if (type->storage == STORAGE_NULL) {
 			error(ctx, decl->init->loc, NULL,
-				"Null is not a valid type for a global");
+				"Can't initialize global as null without explicit type hint");
 			type = &builtin_type_error;
 			goto end;
 		}
