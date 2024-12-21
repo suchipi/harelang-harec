@@ -571,7 +571,7 @@ fn basics() void = {
 
 export fn main() void = {
 	// The interaction between literals and result type reduction is tested
-	// in 30-reduction.c
+	// in 30-reduction.ha
 	basics();
 	numeric();
 	assignment();
