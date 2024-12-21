@@ -1232,7 +1232,7 @@ eval_expr(struct context *ctx,
 		case C_TEST:
 			return eval_type_test(ctx, in, out);
 		default:
-			assert(0); // Unreacheable
+			assert(0); // Unreachable
 		}
 	case EXPR_LEN:
 		return eval_len(ctx, in, out);
