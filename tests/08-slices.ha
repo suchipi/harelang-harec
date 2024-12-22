@@ -172,18 +172,25 @@ fn slicing() void = {
 	assert_slice_eq(p[1..], [2, 3, 4, 5]);
 	assert_slice_eq(p[5..], []);
 
-	compile(status::CHECK,
-		"fn test() void = { let x = \"test\"; x[1..3]; };"
-	)!;
-	compile(status::CHECK,
-		"fn test() void = { let x = [1, 2, 3]; x[\"hi\"..]; };"
-	)!;
-	compile(status::CHECK,
-		"fn test() void = { let x = [1, 2, 3]; x[2..1]; };"
-	)!;
-	compile(status::CHECK,
-		"fn test() void = { let x = [1, 2, 3]; x[..4]; };"
-	)!;
+	let check_failures = [
+		"fn test() void = { let x = \"test\"; x[1..3]; };",
+		"fn test() void = { let x = 0; x[1..3]; };",
+		"fn test() void = { let x = [1, 2, 3]; x[\"hi\"..]; };",
+		"fn test() void = { let x = [1, 2, 3]; x[false..]; };",
+		"fn test() void = { let x = [1, 2, 3]; x[..false]; };",
+		"fn test() void = { let x = [1, 2, 3]; x[..\"hi\"]; };",
+		"fn test() void = { let x = [1, 2, 3]; x[2..1]; };",
+		"fn test() void = { let x = [1, 2, 3]; x[..4]; };",
+		"fn test() void = { let x = [1, 2, 3]; x[..4]; };",
+
+		"fn test(a: *[*]u8) void = { a[..]; };",
+		"fn test(a: *[*]u8) void = { a[2..]; };",
+		"fn test(opa: *[*]opaque) void = { opa[..]; };",
+		"type op = opaque; fn test(opa: *[*]op) void = { opa[..]; };",
+	];
+	for (let tc .. check_failures) {
+		compile(status::CHECK, tc)!;
+	};
 };
 
 type tree = struct {
