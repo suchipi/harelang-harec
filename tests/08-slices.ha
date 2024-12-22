@@ -187,6 +187,13 @@ fn slicing() void = {
 		"fn test(a: *[*]u8) void = { a[2..]; };",
 		"fn test(opa: *[*]opaque) void = { opa[..]; };",
 		"type op = opaque; fn test(opa: *[*]op) void = { opa[..]; };",
+
+		"fn test(opsl: []opaque) void = { opsl[1..]; };",
+		"type op = opaque; fn test(sl: []op) void = { sl[1..]; };",
+		"fn test(opa: *[*]opaque) void = { opa[1..]; };",
+		"fn test(opa: *[*]opaque) void = { opa[1..1]; };",
+		"type op = opaque; fn test(opa: *[*]op) void = { opa[1..]; };",
+		"type op = opaque; fn test(opa: *[*]op) void = { opa[1..1]; };",
 	];
 	for (let tc .. check_failures) {
 		compile(status::CHECK, tc)!;

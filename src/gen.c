@@ -3008,13 +3008,15 @@ gen_expr_slice_at(struct gen_context *ctx,
 	}
 	gen_subslice_info(ctx, expr, qlen, qcap, &qstart, NULL, &qnewlen, &qnewcap);
 
-	struct qbe_value data = mkqtmp(ctx, ctx->arch.ptr, "data.%d");
-	struct qbe_value isz = constl(srctype->array.members->size);
-	pushi(ctx->current, &data, Q_MUL, &qstart, &isz, NULL);
-	pushi(ctx->current, &data, Q_ADD, &qbase, &data, NULL);
+	if (srctype->array.members->size != SIZE_UNDEFINED) {
+		struct qbe_value data = mkqtmp(ctx, ctx->arch.sz, ".%d");
+		struct qbe_value isz = constl(srctype->array.members->size);
+		pushi(ctx->current, &data, Q_MUL, &qstart, &isz, NULL);
+		pushi(ctx->current, &qbase, Q_ADD, &qbase, &data, NULL);
+	}
 
 	struct gen_slice sl = gen_slice_ptrs(ctx, out);
-	store_slice_data(ctx, &sl, &data, &qnewlen, &qnewcap);
+	store_slice_data(ctx, &sl, &qbase, &qnewlen, &qnewcap);
 }
 
 static void

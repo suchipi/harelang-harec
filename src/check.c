@@ -2916,6 +2916,12 @@ check_expr_slice(struct context *ctx,
 				type_storage_unparse(itype->storage));
 			return;
 		}
+		if (dtype->array.members->size == SIZE_UNDEFINED) {
+			error(ctx, aexpr->slice.start->loc, expr,
+				"Cannot use left subslicing operand on a slice with member type of unknown size");
+			return;
+		}
+
 		expr->slice.start = lower_implicit_cast(ctx, 
 			&builtin_type_size, expr->slice.start);
 	}
