@@ -1123,7 +1123,7 @@ gen_expr_call(struct gen_context *ctx, const struct expression *expr)
 	};
 	struct gen_value rval = gv_void;
 	if (rtype->func.result->size != 0
-			&& rtype->func.result->size != SIZE_UNDEFINED) {
+			&& rtype->func.result->storage != STORAGE_NEVER) {
 		rval = mkgtemp(ctx, rtype->func.result, ".%d");
 		call.out = xcalloc(1, sizeof(struct qbe_value));
 		*call.out = mkqval(ctx, &rval);
@@ -3369,7 +3369,7 @@ gen_function_decl(struct gen_context *ctx, const struct declaration *decl)
 	push(&qdef->func.prelude, &start_label);
 
 	if (fntype->func.result->size != 0
-			&& fntype->func.result->size != SIZE_UNDEFINED) {
+			&& fntype->func.result->storage != STORAGE_NEVER) {
 		qdef->func.returns = qtype_lookup(
 			ctx, fntype->func.result, true);
 	} else {
