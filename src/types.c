@@ -1090,13 +1090,13 @@ type_is_castable(struct context *ctx, const struct type *to, const struct type *
 	case STORAGE_BOOL:
 	case STORAGE_VOID:
 	case STORAGE_DONE:
+	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
 	case STORAGE_FUNCTION:
 	case STORAGE_TUPLE:
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
-	case STORAGE_NEVER:
 		return NULL;
 	case STORAGE_ERROR:
 	case STORAGE_TAGGED:

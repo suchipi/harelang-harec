@@ -686,6 +686,7 @@ parse_type(struct lexer *lexer)
 	bool nullable = false, unwrap = false;
 	switch (lex(lexer, &tok)) {
 	case T_BOOL:
+	case T_DONE:
 	case T_F32:
 	case T_F64:
 	case T_I16:
@@ -706,7 +707,6 @@ parse_type(struct lexer *lexer)
 	case T_UINTPTR:
 	case T_VALIST:
 	case T_VOID:
-	case T_DONE:
 		unlex(lexer, &tok);
 		type = parse_primitive_type(lexer);
 		break;
@@ -878,9 +878,9 @@ parse_literal(struct lexer *lexer)
 		}
 		break;
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_NULL:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		assert(0); // Handled above
 	case STORAGE_ALIAS:
 	case STORAGE_ARRAY:
@@ -1081,12 +1081,12 @@ parse_plain_expression(struct lexer *lexer)
 	struct ast_expression *exp;
 	switch (lex(lexer, &tok)) {
 	// plain-expression
-	case T_LITERAL:
-	case T_TRUE:
-	case T_FALSE:
-	case T_NULL:
-	case T_VOID:
 	case T_DONE:
+	case T_FALSE:
+	case T_LITERAL:
+	case T_NULL:
+	case T_TRUE:
+	case T_VOID:
 		unlex(lexer, &tok);
 		return parse_literal(lexer);
 	case T_NAME:

@@ -231,6 +231,7 @@ emit_type(const struct type *type, FILE *out)
 	char *ident;
 	switch (type->storage) {
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_ERROR:
 	case STORAGE_F32:
 	case STORAGE_F64:
@@ -255,7 +256,6 @@ emit_type(const struct type *type, FILE *out)
 	case STORAGE_UINTPTR:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		xfprintf(out, "%s", type_storage_unparse(type->storage));
 		break;
 	case STORAGE_POINTER:

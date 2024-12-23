@@ -109,6 +109,7 @@ itrunc(struct context *ctx, const struct type *type, uint64_t val)
 	case STORAGE_ERROR:
 		return val;
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_FCONST:
@@ -124,7 +125,6 @@ itrunc(struct context *ctx, const struct type *type, uint64_t val)
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		assert(0);
 	}
 	assert(0);
@@ -465,14 +465,14 @@ eval_literal(struct context *ctx,
 		}
 		break;
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_ERROR:
 	case STORAGE_F64:
 	case STORAGE_FCONST:
 	case STORAGE_NULL:
 	case STORAGE_POINTER:
-	case STORAGE_VOID:
-	case STORAGE_DONE:
 	case STORAGE_SLICE:
+	case STORAGE_VOID:
 		out->literal = in->literal;
 		break;
 	case STORAGE_F32:
@@ -683,9 +683,9 @@ eval_cast(struct context *ctx,
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 		assert(0); // Invariant
+	case STORAGE_DONE:
 	case STORAGE_ERROR:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		return true;
 	}
 
@@ -814,8 +814,8 @@ literal_default(struct context *ctx, struct expression *v)
 	case STORAGE_OPAQUE:
 	case STORAGE_VALIST:
 		assert(0); // Invariant
-	case STORAGE_VOID:
 	case STORAGE_DONE:
+	case STORAGE_VOID:
 		break; // no-op
 	}
 

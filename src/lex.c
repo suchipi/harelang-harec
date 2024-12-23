@@ -1180,13 +1180,14 @@ token_str(const struct token *tok)
 		case STORAGE_ALIAS:
 		case STORAGE_ARRAY:
 		case STORAGE_BOOL:
+		case STORAGE_DONE:
 		case STORAGE_ENUM:
 		case STORAGE_ERROR:
 		case STORAGE_FUNCTION:
-		case STORAGE_POINTER:
 		case STORAGE_NEVER:
 		case STORAGE_NULL:
 		case STORAGE_OPAQUE:
+		case STORAGE_POINTER:
 		case STORAGE_RUNE:
 		case STORAGE_SLICE:
 		case STORAGE_STRUCT:
@@ -1195,7 +1196,6 @@ token_str(const struct token *tok)
 		case STORAGE_UNION:
 		case STORAGE_VALIST:
 		case STORAGE_VOID:
-		case STORAGE_DONE:
 			assert(0);
 		}
 		return buf;

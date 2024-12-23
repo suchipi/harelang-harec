@@ -67,6 +67,7 @@ store_for_type(struct gen_context *ctx, const struct type *type)
 	case STORAGE_ALIAS:
 		return store_for_type(ctx, type->alias.type);
 	case STORAGE_ARRAY:
+	case STORAGE_DONE:
 	case STORAGE_ERROR:
 	case STORAGE_FCONST:
 	case STORAGE_FUNCTION:
@@ -82,7 +83,6 @@ store_for_type(struct gen_context *ctx, const struct type *type)
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		abort(); // Invariant
 	}
 	abort(); // Unreachable

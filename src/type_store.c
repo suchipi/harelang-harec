@@ -768,6 +768,7 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_NULL:
 		assert(0); // Invariant
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_I8:
@@ -788,7 +789,6 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_UINTPTR:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		builtin = builtin_type_for_storage(type->storage);
 		type->size = builtin->size;
 		type->align = builtin->align;

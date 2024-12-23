@@ -214,6 +214,7 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	case STORAGE_TAGGED:
 		tagged_qtype(ctx, type, def);
 		break;
+	case STORAGE_DONE:
 	case STORAGE_ENUM:
 	case STORAGE_ERROR:
 	case STORAGE_ALIAS:
@@ -240,7 +241,6 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	case STORAGE_FCONST:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 	case STORAGE_FUNCTION:
 	case STORAGE_OPAQUE:
 	case STORAGE_NEVER:
@@ -318,6 +318,7 @@ type_is_aggregate(const struct type *type)
 {
 	switch (type->storage) {
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_ENUM:
 	case STORAGE_F32:
 	case STORAGE_F64:
@@ -337,7 +338,6 @@ type_is_aggregate(const struct type *type)
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		return false;
 	case STORAGE_FUNCTION:
 		// Special case

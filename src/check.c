@@ -1009,6 +1009,7 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 		return NULL;
 	// Cannot be promoted
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_FUNCTION:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
@@ -1020,7 +1021,6 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		return NULL;
 	// Handled above
 	case STORAGE_ALIAS:
@@ -1039,27 +1039,27 @@ static bool
 type_has_default(struct context *ctx, const struct type *type)
 {
 	switch (type->storage) {
-	case STORAGE_VOID:
-	case STORAGE_DONE:
-	case STORAGE_SLICE:
-	case STORAGE_STRING:
 	case STORAGE_BOOL:
-	case STORAGE_RUNE:
+	case STORAGE_DONE:
+	case STORAGE_ERROR:
 	case STORAGE_F32:
 	case STORAGE_F64:
-	case STORAGE_I8:
 	case STORAGE_I16:
 	case STORAGE_I32:
 	case STORAGE_I64:
+	case STORAGE_I8:
 	case STORAGE_INT:
+	case STORAGE_RUNE:
 	case STORAGE_SIZE:
-	case STORAGE_U8:
+	case STORAGE_SLICE:
+	case STORAGE_STRING:
 	case STORAGE_U16:
 	case STORAGE_U32:
 	case STORAGE_U64:
+	case STORAGE_U8:
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
-	case STORAGE_ERROR:
+	case STORAGE_VOID:
 		return true;
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
@@ -1758,9 +1758,9 @@ check_expr_literal(struct context *ctx,
 	case STORAGE_BOOL:
 		expr->literal.bval = aexpr->literal.bval;
 		break;
+	case STORAGE_DONE:
 	case STORAGE_NULL:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		// No storage
 		break;
 	case STORAGE_ARRAY:
@@ -4132,16 +4132,20 @@ check_exported_type(struct context *ctx,
 		break;
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
+	case STORAGE_ERROR:
 	case STORAGE_F32:
 	case STORAGE_F64:
+	case STORAGE_FCONST:
 	case STORAGE_I16:
 	case STORAGE_I32:
 	case STORAGE_I64:
 	case STORAGE_I8:
+	case STORAGE_ICONST:
 	case STORAGE_INT:
 	case STORAGE_NEVER:
 	case STORAGE_NULL:
 	case STORAGE_OPAQUE:
+	case STORAGE_RCONST:
 	case STORAGE_RUNE:
 	case STORAGE_SIZE:
 	case STORAGE_STRING:
@@ -4151,12 +4155,8 @@ check_exported_type(struct context *ctx,
 	case STORAGE_U8:
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
-	case STORAGE_VOID:
 	case STORAGE_VALIST:
-	case STORAGE_FCONST:
-	case STORAGE_ICONST:
-	case STORAGE_RCONST:
-	case STORAGE_ERROR:
+	case STORAGE_VOID:
 		break;
 	}
 }

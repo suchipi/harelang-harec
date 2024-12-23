@@ -18,10 +18,10 @@ expr_hash(const struct expression *expr)
 	enum type_storage storage = type_dealias(NULL, expr->result)->storage;
 
 	switch (storage) {
-	case STORAGE_ERROR:
-	case STORAGE_VOID:
-	case STORAGE_NULL:
 	case STORAGE_DONE:
+	case STORAGE_ERROR:
+	case STORAGE_NULL:
+	case STORAGE_VOID:
 		break;
 	case STORAGE_BOOL:
 		hash = fnv1a(hash, expr->literal.bval);
