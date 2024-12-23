@@ -33,7 +33,7 @@ const struct type *type_store_lookup_with_flags(struct context *ctx,
 	const struct type *type, unsigned int flags);
 
 const struct type *type_store_lookup_pointer(struct context *ctx,
-	struct location loc, const struct type *referent, unsigned int ptrflags);
+	struct location loc, const struct type *referent, bool nullable);
 
 const struct type *type_store_lookup_array(struct context *ctx,
 	struct location loc, const struct type *members, size_t len,

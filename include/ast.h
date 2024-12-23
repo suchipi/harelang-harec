@@ -70,7 +70,7 @@ struct ast_function_type {
 
 struct ast_pointer_type {
 	struct ast_type *referent;
-	unsigned int flags;
+	bool nullable;
 };
 
 struct ast_tagged_union_type {

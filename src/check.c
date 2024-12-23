@@ -355,15 +355,15 @@ check_expr_alloc_init(struct context *ctx,
 	const struct type *hint)
 {
 	// alloc(initializer) case
-	int ptrflags = 0;
+	bool nullable = false;
 	const struct type *inithint = NULL;
 	if (hint) {
 		const struct type *htype = type_dealias(ctx, hint);
 		switch (htype->storage) {
 		case STORAGE_POINTER:
 			inithint = htype->pointer.referent;
+			nullable = htype->pointer.nullable;
 			// TODO: Describe the use of pointer flags in the spec
-			ptrflags = htype->pointer.flags;
 			break;
 		case STORAGE_SLICE:
 			inithint = hint;
@@ -411,8 +411,10 @@ check_expr_alloc_init(struct context *ctx,
 			objtype = inithint;
 		}
 	}
-	expr->result = type_store_lookup_pointer(ctx, aexpr->loc,
-			objtype, ptrflags);
+
+	expr->result = type_store_lookup_pointer(ctx,
+		aexpr->loc, objtype, nullable);
+
 	if (expr->alloc.init->result->size == SIZE_UNDEFINED) {
 		error(ctx, aexpr->loc, expr,
 			"Cannot allocate object of undefined size");
@@ -657,7 +659,7 @@ check_expr_append_insert(struct context *ctx,
 			&& valtype->storage != STORAGE_ARRAY
 			&& (valtype->storage != STORAGE_POINTER
 				|| valtype->pointer.referent->storage != STORAGE_ARRAY
-				|| valtype->pointer.flags & PTR_NULLABLE)) {
+				|| valtype->pointer.nullable)) {
 		error(ctx, aexpr->append.value->loc, expr,
 			"Value must be an array, slice, or array pointer in multi-valued %s",
 			exprtype_name);
@@ -1084,7 +1086,7 @@ type_has_default(struct context *ctx, const struct type *type)
 		}
 		return false;
 	case STORAGE_POINTER:
-		return type->pointer.flags & PTR_NULLABLE;
+		return type->pointer.nullable;
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
 		for (struct struct_field *sf = type->struct_union.fields;
@@ -1499,7 +1501,7 @@ check_expr_cast(struct context *ctx,
 	case C_ASSERTION:
 	case C_TEST:
 		if (primary->storage == STORAGE_POINTER) {
-			if (!(primary->pointer.flags & PTR_NULLABLE)) {
+			if (!primary->pointer.nullable) {
 				error(ctx, aexpr->cast.value->loc, expr,
 					"Expected a tagged union type or "
 					"a nullable pointer");
@@ -1509,7 +1511,7 @@ check_expr_cast(struct context *ctx,
 					&& (secondary->storage != STORAGE_POINTER
 					|| primary->pointer.referent
 						!= secondary->pointer.referent
-					|| (secondary->pointer.flags & PTR_NULLABLE))) {
+					|| (secondary->pointer.nullable))) {
 				error(ctx, aexpr->cast.type->loc, expr,
 					"Can only type assert nullable pointer into non-nullable pointer of the same type or null");
 				return;
@@ -2398,7 +2400,7 @@ check_expr_match(struct context *ctx,
 	bool is_nullable_ptr = false, is_tagged_ptr = false;
 	const struct type *ref_type = NULL;
 	if (type->storage == STORAGE_POINTER) {
-		is_nullable_ptr = (type->pointer.flags & PTR_NULLABLE) > 0;
+		is_nullable_ptr = type->pointer.nullable;
 		ref_type = type_dealias(ctx, type->pointer.referent);
 		if (ref_type->storage == STORAGE_ERROR) {
 			mkerror(expr);
@@ -3601,8 +3603,7 @@ check_expr_unarithm(struct context *ctx,
 				"Cannot de-reference non-pointer type");
 			return;
 		}
-		if (type_dealias(ctx, operand->result)->pointer.flags
-				& PTR_NULLABLE) {
+		if (type_dealias(ctx, operand->result)->pointer.nullable) {
 			error(ctx, aexpr->unarithm.operand->loc, expr,
 				"Cannot dereference nullable pointer type");
 			return;

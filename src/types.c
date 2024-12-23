@@ -19,7 +19,7 @@ type_dereference(struct context *ctx, const struct type *type, bool allow_nullab
 		}
 		return type_dereference(ctx, type_dealias(ctx, type), allow_nullable);
 	case STORAGE_POINTER:
-		if (!allow_nullable && type->pointer.flags & PTR_NULLABLE) {
+		if (!allow_nullable && type->pointer.nullable) {
 			return NULL;
 		}
 		return type_dereference(ctx, type->pointer.referent, allow_nullable);
@@ -443,7 +443,7 @@ type_hash(const struct type *type)
 		hash = fnv1a(hash, type->flexible.id);
 		break;
 	case STORAGE_POINTER:
-		hash = fnv1a(hash, type->pointer.flags);
+		hash = fnv1a(hash, (unsigned char) type->pointer.nullable);
 		hash = fnv1a_u32(hash, type_hash(type->pointer.referent));
 		break;
 	case STORAGE_SLICE:
@@ -855,7 +855,7 @@ type_is_assignable(struct context *ctx,
 		to_secondary = strip_flags(to_secondary, &_to_secondary);
 		switch (from->storage) {
 		case STORAGE_NULL:
-			return to->pointer.flags & PTR_NULLABLE;
+			return to->pointer.nullable;
 		case STORAGE_POINTER:
 			from_secondary = from->pointer.referent;
 			from_secondary = strip_flags(from_secondary, &_from_secondary);
@@ -876,8 +876,8 @@ type_is_assignable(struct context *ctx,
 				}
 				break;
 			}
-			if (from->pointer.flags & PTR_NULLABLE) {
-				return to->pointer.flags & PTR_NULLABLE;
+			if (from->pointer.nullable) {
+				return to->pointer.nullable;
 			}
 			return true;
 		default:

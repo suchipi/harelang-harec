@@ -923,7 +923,7 @@ type_init_from_atype(struct context *ctx,
 		if (size_only) {
 			break;
 		}
-		type->pointer.flags = atype->pointer.flags;
+		type->pointer.nullable = atype->pointer.nullable;
 		type->pointer.referent = type_store_lookup_atype(
 			ctx, atype->pointer.referent);
 		if (type->pointer.referent->storage == STORAGE_ERROR) {
@@ -1077,7 +1077,7 @@ type_store_lookup_with_flags(struct context *ctx,
 
 const struct type *
 type_store_lookup_pointer(struct context *ctx, struct location loc,
-	const struct type *referent, unsigned int ptrflags)
+	const struct type *referent, bool nullable)
 {
 	if (referent->storage == STORAGE_ERROR) {
 		return &builtin_type_error;
@@ -1100,7 +1100,7 @@ type_store_lookup_pointer(struct context *ctx, struct location loc,
 		.storage = STORAGE_POINTER,
 		.pointer = {
 			.referent = referent,
-			.flags = ptrflags,
+			.nullable = nullable,
 		},
 		.size = builtin_type_uintptr.size,
 		.align = builtin_type_uintptr.align,
@@ -1338,12 +1338,11 @@ type_store_reduce_result(struct context *ctx, struct location loc,
 			if (it->flags != jt->flags) {
 				continue;
 			}
-			if ((it->pointer.flags & PTR_NULLABLE)
-					|| (jt->pointer.flags & PTR_NULLABLE)) {
+			if (it->pointer.nullable || jt->pointer.nullable) {
 				it = type_store_lookup_pointer(ctx, loc,
-					it->pointer.referent, PTR_NULLABLE);
+					it->pointer.referent, true);
 				jt = type_store_lookup_pointer(ctx, loc,
-					jt->pointer.referent, PTR_NULLABLE);
+					jt->pointer.referent, true);
 				if (it == jt) {
 					dropped = true;
 					*tu = i->next;
@@ -1374,7 +1373,7 @@ type_store_reduce_result(struct context *ctx, struct location loc,
 	if (null != NULL && ptr != NULL) {
 		*null = (*null)->next;
 		ptr->type = type_store_lookup_pointer(ctx, loc,
-			ptr->type->pointer.referent, PTR_NULLABLE);
+			ptr->type->pointer.referent, true);
 	}
 
 	if (in == NULL) {

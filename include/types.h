@@ -97,13 +97,9 @@ struct type_flexible {
 	size_t zrefs;
 };
 
-enum pointer_flags {
-	PTR_NULLABLE = 1 << 0,
-};
-
 struct type_pointer {
 	const struct type *referent;
-	unsigned int flags;
+	bool nullable;
 };
 
 struct struct_field {

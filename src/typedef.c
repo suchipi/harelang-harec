@@ -259,8 +259,7 @@ emit_type(const struct type *type, FILE *out)
 		xfprintf(out, "%s", type_storage_unparse(type->storage));
 		break;
 	case STORAGE_POINTER:
-		xfprintf(out, "%s*", type->pointer.flags & PTR_NULLABLE
-				? "nullable " : "");
+		xfprintf(out, "%s*", type->pointer.nullable ? "nullable " : "");
 		emit_type(type->pointer.referent, out);
 		break;
 	case STORAGE_ARRAY:

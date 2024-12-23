@@ -718,9 +718,7 @@ parse_type(struct lexer *lexer)
 		type = mktype(lexer->loc);
 		type->storage = STORAGE_POINTER;
 		type->pointer.referent = parse_type(lexer);
-		if (nullable) {
-			type->pointer.flags |= PTR_NULLABLE;
-		}
+		type->pointer.nullable = nullable;
 		break;
 	case T_STRUCT:
 	case T_UNION:

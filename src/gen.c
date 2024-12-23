@@ -557,7 +557,7 @@ gen_expr_alloc_with(struct gen_context *ctx,
 	struct qbe_value qresult = mkqval(ctx, &result);
 	pushi(ctx->current, &qresult, Q_CALL, &ctx->rt.malloc, &sz, NULL);
 
-	if (!(type_dealias(NULL, expr->result)->pointer.flags & PTR_NULLABLE)) {
+	if (!(type_dealias(NULL, expr->result)->pointer.nullable)) {
 		struct qbe_value zero = constl(0);
 		gen_fixed_assert(ctx, expr->loc, ABORT_ALLOC_FAILURE,
 				Q_CNEL, &qresult, &zero);
@@ -2646,7 +2646,7 @@ gen_expr_match_with(struct gen_context *ctx,
 	// If objtype is a pointer, ref_type is the dealiased referent type.
 	const struct type *ref_type = objtype;
 	if (objtype->storage == STORAGE_POINTER) {
-		is_nullable_ptr = (objtype->pointer.flags & PTR_NULLABLE) > 0;
+		is_nullable_ptr = objtype->pointer.nullable;
 		ref_type = type_dealias(NULL, objtype->pointer.referent);
 		is_tagged_ptr = ref_type->storage == STORAGE_TAGGED;
 	}
