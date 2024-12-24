@@ -158,6 +158,7 @@ lower_implicit_cast(struct context *ctx,
 
 	struct expression *cast = xcalloc(1, sizeof(struct expression));
 	cast->type = EXPR_CAST;
+	cast->loc = expr->loc;
 	cast->result = cast->cast.secondary = to;
 	cast->cast.kind = C_CAST;
 	cast->cast.value = expr;
@@ -2476,6 +2477,7 @@ check_expr_match(struct context *ctx,
 		// TODO: This should probably be done in a more first-class way
 		struct ast_expression compound = {
 			.type = EXPR_COMPOUND,
+			.loc = acase->exprs.expr->loc,
 			.compound = {
 				.label = aexpr->match.label,
 				.list = acase->exprs,
@@ -2739,6 +2741,7 @@ check_expr_propagate(struct context *ctx,
 	case_ok->object = ok_obj;
 	case_ok->value = xcalloc(1, sizeof(struct expression));
 	case_ok->value->result = result_type;
+	case_ok->value->loc = expr->loc;
 	if (ok_obj) {
 		case_ok->value->type = EXPR_ACCESS;
 		case_ok->value->access.type = ACCESS_IDENTIFIER;
@@ -2748,9 +2751,9 @@ check_expr_propagate(struct context *ctx,
 	}
 
 	case_err->value = xcalloc(1, sizeof(struct expression));
+	case_err->value->loc = expr->loc;
 
 	if (aexpr->propagate.abort) {
-		case_err->value->loc = expr->loc;
 		case_err->value->type = EXPR_ASSERT;
 		case_err->value->assert = (struct expression_assert){
 			.cond = NULL,
@@ -2783,6 +2786,7 @@ check_expr_propagate(struct context *ctx,
 		struct expression *rval =
 			xcalloc(1, sizeof(struct expression));
 		rval->result = return_type;
+		rval->loc = expr->loc;
 		if (err_obj != NULL) {
 			rval->type = EXPR_ACCESS;
 			rval->access.type = ACCESS_IDENTIFIER;
