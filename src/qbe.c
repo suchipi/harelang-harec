@@ -156,17 +156,6 @@ qbe_append_def(struct qbe_program *prog, struct qbe_def *def)
 	prog->next = &def->next;
 }
 
-static struct qbe_value *
-qval_dup(const struct qbe_value *val)
-{
-	struct qbe_value *new = xcalloc(1, sizeof(struct qbe_value));
-	*new = *val;
-	if (val->kind != QV_CONST) {
-		new->name = xstrdup(val->name);
-	}
-	return new;
-}
-
 static void
 va_geni(struct qbe_statement *stmt, enum qbe_instr instr,
 		const struct qbe_value *out, va_list ap)
@@ -176,7 +165,8 @@ va_geni(struct qbe_statement *stmt, enum qbe_instr instr,
 
 	if (out) {
 		assert(out->kind == QV_TEMPORARY);
-		stmt->out = qval_dup(out);
+		stmt->out = xcalloc(1, sizeof(struct qbe_value));
+		*stmt->out = *out;
 	}
 
 	struct qbe_arguments **next = &stmt->args;
