@@ -1294,6 +1294,8 @@ check_expr_binding(struct context *ctx,
 		}
 		if (!type) {
 			type = initializer->result;
+			// XXX why is this needed?
+			type = type_store_lookup_with_flags(ctx, type, 0);
 		}
 		if (abinding->unpack != NULL) {
 			create_unpack_bindings(ctx, type,
