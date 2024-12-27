@@ -184,7 +184,6 @@ struct ast_expression_binding {
 	char *name;
 	struct ast_binding_unpack *unpack;
 	struct ast_type *type;
-	unsigned int flags;
 	bool is_static;
 	struct ast_expression *initializer;
 	struct ast_expression_binding *next;

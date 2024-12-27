@@ -1243,8 +1243,6 @@ check_expr_binding(struct context *ctx,
 		const struct type *type = NULL;
 		if (abinding->type) {
 			type = type_store_lookup_atype(ctx, abinding->type);
-			type = type_store_lookup_with_flags(ctx,
-				type, type->flags | abinding->flags);
 		}
 
 		struct expression *initializer =
@@ -1295,8 +1293,7 @@ check_expr_binding(struct context *ctx,
 			goto done;
 		}
 		if (!type) {
-			type = type_store_lookup_with_flags(ctx,
-				initializer->result, abinding->flags);
+			type = initializer->result;
 		}
 		if (abinding->unpack != NULL) {
 			create_unpack_bindings(ctx, type,
@@ -2035,8 +2032,6 @@ check_expr_for_each(struct context *ctx,
 
 	if (abinding->type != NULL) {
 		binding_type = type_store_lookup_atype(ctx, abinding->type);
-		binding_type = type_store_lookup_with_flags(ctx, binding_type,
-			binding_type->flags | abinding->flags);
 
 		// Construct a type hint for the init expression. For example,
 		// if the type hint is *int and we are in a &.., we would have
