@@ -3,8 +3,6 @@ use rt::{compile, status, toutf8};
 type t = int;
 type e = !int;
 
-let x = 1337;
-
 fn basics() void = {
 	let cases = [[0, 1], [1, 3], [10, 20], [11, 21], [12, 22], [13, 13]];
 	for (let i = 0z; i < len(cases); i += 1) {
@@ -31,16 +29,6 @@ fn basics() void = {
 		abort();
 	};
 	assert(result);
-
-	let y = &x;
-	switch (y) {
-	case &x => void;
-	case => abort();
-	};
-	switch (y: *uint) {
-	case &x: *uint => void;
-	case => abort();
-	};
 
 	// assignability
 	switch (0) {
@@ -71,13 +59,6 @@ fn basics() void = {
 	compile(status::CHECK, "
 		fn test(x: int) void = switch (0) {
 		case x => void;
-		case => void;
-		};
-	")!;
-
-	compile(status::CHECK, "
-		fn test() void = switch (&0) {
-		case &0 => void;
 		case => void;
 		};
 	")!;
@@ -200,35 +181,6 @@ fn duplicates() void = {
 		case => void;
 		};
 	")!;
-
-	compile(status::CHECK, "
-		let x = 0;
-		fn test() void = switch (&x) {
-		case &x => void;
-		case &x => void;
-		case => void;
-		};
-	")!;
-
-	compile(status::CHECK, "
-		let x = ([1, 2, 3, 4], 5);
-		fn test() void = switch (&0) {
-		case &(x.0: [*]int)[4] => void;
-		case &x.1 => void;
-		case => void;
-		};
-	")!;
-
-	// TODO: uncomment this once translation-time unions actually work
-	//compile(status::CHECK, "
-	//	type t = union { x: [2]int, y: (int, int) };
-	//	let x = t { ... };
-	//	fn test() void = switch (&0) {
-	//	case &x.x[1] => void;
-	//	case &x.y.1 => void;
-	//	case => void;
-	//	};
-	//")!;
 
 	compile(status::CHECK, "
 		type x = enum { A, B, C = B };

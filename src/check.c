@@ -3156,23 +3156,6 @@ casecmp(const void *_a, const void *_b)
 	} else if (type_is_integer(NULL, a->result)) {
 		return a->literal.uval < b->literal.uval ? -1
 			: a->literal.uval > b->literal.uval ? 1 : 0;
-	} else if (type_dealias(NULL, a->result)->storage == STORAGE_POINTER) {
-		const struct scope_object *obja = a->literal.object;
-		const struct scope_object *objb = b->literal.object;
-		if (obja != objb) {
-			if (obja == NULL) {
-				return -1;
-			} else if (objb == NULL) {
-				return 1;
-			}
-			uint32_t a = identifier_hash(FNV1A_INIT, &obja->name);
-			uint32_t b = identifier_hash(FNV1A_INIT, &objb->name);
-			assert(a != b);
-			return a < b ? -1 : 1;
-		} else {
-			return a->literal.uval < b->literal.uval ? -1
-				: a->literal.uval > b->literal.uval ? 1 : 0;
-		}
 	} else if (type_dealias(NULL, a->result)->storage == STORAGE_STRING) {
 		size_t len = a->literal.string.len < b->literal.string.len
 			? a->literal.string.len : b->literal.string.len;
@@ -3238,7 +3221,6 @@ num_cases(struct context *ctx, const struct type *type)
 		return n;
 	default:
 		assert(type_is_integer(ctx, type)
-			|| type->storage == STORAGE_POINTER
 			|| type->storage == STORAGE_RUNE);
 		assert(!type_is_flexible(type));
 		if (type->size >= sizeof(size_t)) {
@@ -3261,7 +3243,6 @@ check_expr_switch(struct context *ctx,
 	const struct type *type = lower_flexible(ctx, value->result, NULL);
 	expr->_switch.value = value;
 	if (!type_is_integer(ctx, type)
-			&& type_dealias(ctx, type)->storage != STORAGE_POINTER
 			&& type_dealias(ctx, type)->storage != STORAGE_STRING
 			&& type_dealias(ctx, type)->storage != STORAGE_BOOL
 			&& type_dealias(ctx, type)->storage != STORAGE_RUNE) {
@@ -3359,8 +3340,6 @@ check_expr_switch(struct context *ctx,
 		bool equal;
 		if (type_is_integer(ctx, value->result)) {
 			equal = a->uval == b->uval;
-		} else if (type_dealias(ctx, value->result)->storage == STORAGE_POINTER) {
-			equal = a->object == b->object && a->uval == b->uval;
 		} else if (type_dealias(ctx, value->result)->storage == STORAGE_STRING) {
 			equal = a->string.len == b->string.len
 				&& memcmp(a->string.value, b->string.value, a->string.len) == 0;
