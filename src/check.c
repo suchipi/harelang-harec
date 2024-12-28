@@ -3271,9 +3271,7 @@ check_expr_switch(struct context *ctx,
 		return;
 	}
 
-	struct type_tagged_union result_type = {0};
-	struct type_tagged_union *tagged = &result_type,
-		**next_tag = &tagged->next;
+	struct type_tagged_union *tagged = NULL, *result = NULL;
 
 	struct switch_case **next = &expr->_switch.cases, *_case = NULL;
 	size_t n = 0;
@@ -3331,16 +3329,12 @@ check_expr_switch(struct context *ctx,
 			},
 		};
 		check_expression(ctx, &compound, _case->value, hint);
-
-		if (expr->result == NULL) {
-			expr->result = _case->value->result;
-			tagged->type = expr->result;
-		} else if (expr->result != _case->value->result) {
-			tagged = *next_tag =
-				xcalloc(1, sizeof(struct type_tagged_union));
-			next_tag = &tagged->next;
-			tagged->type = _case->value->result;
+		if (tagged == NULL) {
+			result = tagged = xcalloc(1, sizeof *tagged);
+		} else if (tagged->type && tagged->type != _case->value->result) {
+			tagged = tagged->next = xcalloc(1, sizeof *tagged);
 		}
+		tagged->type = _case->value->result;
 	}
 
 	struct expression **cases_array = xcalloc(n, sizeof(struct expression *));
@@ -3391,39 +3385,36 @@ check_expr_switch(struct context *ctx,
 			"Switch expression isn't exhaustive");
 	}
 
-	if (result_type.next) {
-		if (hint) {
-			expr->result = hint;
-		} else {
-			expr->result = type_store_reduce_result(
-				ctx, aexpr->loc, &result_type);
-			if (expr->result == NULL) {
-				error(ctx, aexpr->loc, expr,
-					"Invalid result type (dangling or ambiguous null)");
-				return;
-			}
+	if (hint) {
+		expr->result = hint;
+	} else {
+		expr->result = type_store_reduce_result(
+			ctx, aexpr->loc, result);
+		if (expr->result == NULL) {
+			error(ctx, aexpr->loc, expr,
+				"Invalid result type (dangling or ambiguous null)");
+			return;
 		}
+	}
 
-		_case = expr->_switch.cases;
-		acase = aexpr->_switch.cases;
-		while (_case) {
-			if (!type_is_assignable(ctx, expr->result, _case->value->result)) {
-				error(ctx, acase->exprs.expr->loc, expr,
-					"Switch case is not assignable to result type");
-				return;
-			}
-			_case->value = lower_implicit_cast(ctx, 
-				expr->result, _case->value);
-			_case = _case->next;
-			acase = acase->next;
+	_case = expr->_switch.cases;
+	acase = aexpr->_switch.cases;
+	while (_case) {
+		if (!type_is_assignable(ctx, expr->result, _case->value->result)) {
+			error(ctx, acase->exprs.expr->loc, expr,
+				"Switch case is not assignable to result type");
+			return;
 		}
+		_case->value = lower_implicit_cast(ctx,
+			expr->result, _case->value);
+		_case = _case->next;
+		acase = acase->next;
+	}
 
-		struct type_tagged_union *tu = result_type.next;
-		while (tu) {
-			struct type_tagged_union *next = tu->next;
-			free(tu);
-			tu = next;
-		}
+	while (result) {
+		struct type_tagged_union *next = result->next;
+		free(result);
+		result = next;
 	}
 }
 
