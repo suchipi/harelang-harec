@@ -3181,38 +3181,28 @@ num_cases(struct context *ctx, const struct type *type)
 	case STORAGE_STRING:
 		return -1;
 	case STORAGE_ENUM:;
-		// XXX: O(n^2)
-		size_t n = 0;
 		struct scope_object *obj = type->_enum.values->objects;
 		assert(obj != NULL);
-		if (obj->otype == O_SCAN) {
-			wrap_resolver(ctx, obj, resolve_enum_field);
+		size_t n = 0;
+		for (struct scope_object *o = obj; o; o = o->lnext, ++n) {
+			if (o->otype == O_SCAN) {
+				wrap_resolver(ctx, o, resolve_enum_field);
+			}
+			assert(o->otype == O_CONST);
 		}
-		for (; obj != NULL; obj = obj->lnext) {
-			if (obj->otype == O_DECL) {
-				continue;
-			}
-			assert(obj->otype == O_CONST);
-			bool should_count = true;
-			for (struct scope_object *other = obj->lnext;
-					other != NULL; other = other->lnext) {
-				if (other->otype == O_DECL) {
-					continue;
-				}
-				if (other->otype == O_SCAN) {
-					wrap_resolver(ctx, other, resolve_enum_field);
-				}
-				assert(other->otype == O_CONST);
-				if (obj->value->literal.uval
-						== other->value->literal.uval) {
-					should_count = false;
-					break;
-				}
-			}
-			if (should_count) {
-				n++;
+		struct expression **cases_array =
+			xcalloc(n, sizeof(struct expression *));
+		size_t i = 0;
+		for (struct scope_object *o = obj; o; o = o->lnext, ++i) {
+			cases_array[i] = o->value;
+		}
+		qsort(cases_array, n, sizeof(struct expression *), &casecmp);
+		for (size_t i = 1; i < n; ++i) {
+			if (casecmp(&cases_array[i - 1], &cases_array[i]) == 0) {
+				--n;
 			}
 		}
+		free(cases_array);
 		return n;
 	default:
 		assert(type_is_integer(ctx, type)
