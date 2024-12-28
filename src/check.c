@@ -3143,11 +3143,6 @@ casecmp(const void *_a, const void *_b)
 	const struct expression *a = *(const struct expression **)_a;
 	const struct expression *b = *(const struct expression **)_b;
 	assert(a->type == EXPR_LITERAL && b->type == EXPR_LITERAL);
-	if (a->result->storage == STORAGE_ERROR) {
-		return b->result->storage == STORAGE_ERROR ? 0 : 1;
-	} else if (b->result->storage == STORAGE_ERROR) {
-		return -1;
-	}
 	assert(type_dealias(NULL, a->result)->storage
 		== type_dealias(NULL, b->result)->storage);
 	if (type_is_signed(NULL, a->result)) {
@@ -3324,34 +3319,18 @@ check_expr_switch(struct context *ctx,
 		for (const struct case_option *opt = _case->options;
 				opt; opt = opt->next) {
 			assert(i < n);
-			cases_array[i] = opt->value;
-			i++;
+			if (opt->value->result->storage != STORAGE_ERROR) {
+				cases_array[i] = opt->value;
+				i++;
+			}
 		}
 	}
-	assert(i == n);
+	n = i;
 	qsort(cases_array, n, sizeof(struct expression *), &casecmp);
 	bool has_duplicate = false;
 	for (size_t i = 1; i < n; i++) {
-		if (cases_array[i]->result->storage == STORAGE_ERROR) {
-			break;
-		}
-		const struct expression_literal *a = &cases_array[i - 1]->literal;
-		const struct expression_literal *b = &cases_array[i]->literal;
-		bool equal;
-		if (type_is_integer(ctx, value->result)) {
-			equal = a->uval == b->uval;
-		} else if (type_dealias(ctx, value->result)->storage == STORAGE_STRING) {
-			equal = a->string.len == b->string.len
-				&& memcmp(a->string.value, b->string.value, a->string.len) == 0;
-		} else if (type_dealias(ctx, value->result)->storage == STORAGE_BOOL) {
-			equal = a->bval == b->bval;
-		} else {
-			assert(type_dealias(ctx, value->result)->storage == STORAGE_RCONST
-				|| type_dealias(ctx, value->result)->storage == STORAGE_RUNE);
-			equal = a->rune == b->rune;
-		}
-		if (equal) {
-			error(ctx, cases_array[i]->loc, cases_array[i],
+		if (casecmp(&cases_array[i - 1], &cases_array[i]) == 0) {
+			error(ctx, cases_array[i - 1]->loc, cases_array[i - 1],
 				"Duplicate switch case");
 			has_duplicate = true;
 		}
