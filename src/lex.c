@@ -630,12 +630,11 @@ lex_string(struct lexer *lexer, struct token *out)
 				next(lexer, NULL, true);
 			}
 		}
-		char *s = xcalloc(lexer->buflen + 1, 1);
-		memcpy(s, lexer->buf, lexer->buflen);
 		out->token = T_LITERAL;
 		out->storage = STORAGE_STRING;
+		lexer->buf[lexer->buflen] = '\0';
 		out->string.len = lexer->buflen;
-		out->string.value = s;
+		out->string.value = lexer->buf;
 		clearbuf(lexer);
 		return out->token;
 	case '\'':
@@ -1078,15 +1077,6 @@ token_finish(struct token *tok)
 	switch (tok->token) {
 	case T_NAME:
 		free(tok->name);
-		break;
-	case T_LITERAL:
-		switch (tok->storage) {
-		case STORAGE_STRING:
-			free(tok->string.value);
-			break;
-		default:
-			break;
-		}
 		break;
 	default:
 		break;

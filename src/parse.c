@@ -853,26 +853,19 @@ parse_literal(struct lexer *lexer)
 	case STORAGE_RCONST:
 		exp->literal.rune = tok.rune;
 		break;
-	case STORAGE_STRING:
-		exp->literal.string.len = tok.string.len;
-		exp->literal.string.value = tok.string.value;
-		while (lex(lexer, &tok) == T_LITERAL
-				&& tok.storage == STORAGE_STRING) {
-			size_t len = exp->literal.string.len;
-			exp->literal.string.value = xrealloc(
-				exp->literal.string.value,
-				len + tok.string.len);
-			memcpy(exp->literal.string.value + len,
-				tok.string.value, tok.string.len);
-			exp->literal.string.len += tok.string.len;
-		}
+	case STORAGE_STRING:;
+		size_t ln = 0, cap = 0;
+		char *s = NULL;
+		do {
+			append_buffer(&s, &ln, &cap, tok.string.value, tok.string.len);
+		} while (lex(lexer, &tok) == T_LITERAL && tok.storage == STORAGE_STRING);
 		unlex(lexer, &tok);
+		exp->literal.string.value = s;
+		exp->literal.string.len = ln;
 
 		// check for invalid UTF-8 (possible when \x is used)
-		const char *s = exp->literal.string.value;
-		size_t len = exp->literal.string.len;
-		while (s - exp->literal.string.value < (ptrdiff_t)len) {
-			if (utf8_decode(&s) == UTF8_INVALID) {
+		while (s - exp->literal.string.value < (ptrdiff_t)ln) {
+			if (utf8_decode((const char **)&s) == UTF8_INVALID) {
 				error(loc, "invalid UTF-8 in string literal");
 			}
 		}
@@ -2499,7 +2492,7 @@ parse_attr_symbol(struct lexer *lexer)
 			"invalid symbol", &tok);
 	}
 	want(lexer, T_RPAREN, NULL);
-	return tok.string.value;
+	return xstrdup(tok.string.value);
 }
 
 static void

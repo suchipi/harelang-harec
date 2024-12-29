@@ -161,7 +161,7 @@ struct token {
 		double fval;
 		struct {
 			size_t len;
-			char *value;
+			const char *value;
 		} string;
 	};
 };
