@@ -315,7 +315,7 @@ gen_access_ident(struct gen_context *ctx, const struct scope_object *obj)
 		return (struct gen_value){
 			.kind = GV_GLOBAL,
 			.type = obj->type,
-			.name = ident_to_sym(&obj->ident),
+			.name = ident_to_sym(ctx->itbl, obj->ident),
 			.threadlocal = obj->flags & SO_THREADLOCAL,
 		};
 	case O_CONST:
@@ -1825,19 +1825,19 @@ static struct qbe_data_item *gen_data_item(struct gen_context *,
 static struct gen_value
 gen_literal_string(struct gen_context *ctx, const struct expression *expr)
 {
-	struct qbe_def *str = xcalloc(1, sizeof(struct qbe_def));
-	str->kind = Q_DATA;
-	str->data.align = ALIGN_UNDEFINED;
-	str->exported = false;
-	str->name = gen_name(&ctx->id, "strliteral.%d");
-	str->file = expr->loc.file;
-	gen_data_item(ctx, expr, &str->data.items);
-	qbe_append_def(ctx->out, str);
+	struct qbe_def *s = xcalloc(1, sizeof(struct qbe_def));
+	s->kind = Q_DATA;
+	s->data.align = ALIGN_UNDEFINED;
+	s->exported = false;
+	s->name = gen_name(&ctx->id, "strliteral.%d");
+	s->file = expr->loc.file;
+	gen_data_item(ctx, expr, &s->data.items);
+	qbe_append_def(ctx->out, s);
 
 	return (struct gen_value){
 		.kind = GV_GLOBAL,
 		.type = expr->result,
-		.name = xstrdup(str->name),
+		.name = xstrdup(s->name),
 	};
 }
 
@@ -3343,8 +3343,7 @@ gen_function_decl(struct gen_context *ctx, const struct declaration *decl)
 	qdef->exported = decl->exported;
 	ctx->current = &qdef->func;
 
-	qdef->name = decl->symbol ? xstrdup(decl->symbol)
-		: ident_to_sym(&decl->ident);
+	qdef->name = decl->symbol ? decl->symbol : ident_to_sym(ctx->itbl, decl->ident);
 	qdef->file = decl->file;
 
 	struct qbe_statement start_label = {0};
@@ -3370,9 +3369,9 @@ gen_function_decl(struct gen_context *ctx, const struct declaration *decl)
 			continue;
 		}
 		param = *next = xcalloc(1, sizeof(struct qbe_func_param));
-		assert(!obj->ident.ns); // Invariant
-		param->name = xstrdup(obj->ident.name);
-		param->type = qtype_lookup(ctx, type, true);
+		assert(!obj->ident->ns); // Invariant
+		param->name = xstrdup(obj->ident->name);
+		param->type = qtype_lookup(ctx, type, false);
 
 		struct gen_binding *gb =
 			xcalloc(1, sizeof(struct gen_binding));
@@ -3434,8 +3433,9 @@ gen_function_decl(struct gen_context *ctx, const struct declaration *decl)
 		init->data.secflags = NULL;
 
 		size_t n = snprintf(NULL, 0, ".init.%s", qdef->name);
-		init->name = xcalloc(n + 1, 1);
-		snprintf(init->name, n + 1, ".init.%s", qdef->name);
+		char *s = xcalloc(n + 1, 1);
+		snprintf(s, n + 1, ".init.%s", qdef->name);
+		init->name = intern_owned(ctx->itbl, s);
 
 		struct qbe_data_item dataitem = {
 			.type = QD_VALUE,
@@ -3460,8 +3460,9 @@ gen_function_decl(struct gen_context *ctx, const struct declaration *decl)
 		fini->data.secflags = NULL;
 
 		size_t n = snprintf(NULL, 0, ".fini.%s", qdef->name);
-		fini->name = xcalloc(n + 1, 1);
-		snprintf(fini->name, n + 1, ".fini.%s", qdef->name);
+		char *s = xcalloc(n + 1, 1);
+		snprintf(s, n + 1, ".fini.%s", qdef->name);
+		fini->name = intern_owned(ctx->itbl, s);
 
 		struct qbe_data_item dataitem = {
 			.type = QD_VALUE,
@@ -3486,10 +3487,11 @@ gen_function_decl(struct gen_context *ctx, const struct declaration *decl)
 		test->data.secflags = "aw";
 
 		size_t n = snprintf(NULL, 0, ".test.%s", qdef->name);
-		test->name = xcalloc(n + 1, 1);
-		snprintf(test->name, n + 1, ".test.%s", qdef->name);
+		char *s = xcalloc(n + 1, 1);
+		snprintf(s, n + 1, ".test.%s", qdef->name);
+		test->name = intern_owned(ctx->itbl, s);
 
-		char *ident = identifier_unparse(&decl->ident);
+		char *ident = ident_unparse(decl->ident);
 		struct qbe_data_item *dataitem = &test->data.items;
 		struct expression expr;
 		mkstrliteral(&expr, "%s", ident);
@@ -3525,7 +3527,7 @@ gen_data_item(struct gen_context *ctx, const struct expression *expr,
 	type = lower_flexible(NULL, type, NULL);
 	if (literal->object) {
 		item->type = QD_SYMOFFS;
-		item->sym = ident_to_sym(&literal->object->ident);
+		item->sym = ident_to_sym(ctx->itbl, literal->object->ident);
 		if (type->storage == STORAGE_SLICE) {
 			item->offset = literal->slice.offset +
 				literal->slice.start * type->array.members->size;
@@ -3809,8 +3811,7 @@ gen_global_decl(struct gen_context *ctx, const struct declaration *decl)
 	qdef->data.align = ALIGN_UNDEFINED;
 	qdef->data.threadlocal = global->threadlocal;
 	qdef->exported = decl->exported;
-	qdef->name = decl->symbol ? xstrdup(decl->symbol)
-		: ident_to_sym(&decl->ident);
+	qdef->name = decl->symbol ? decl->symbol : ident_to_sym(ctx->itbl, decl->ident);
 	qdef->file = decl->file;
 	gen_data_item(ctx, global->value, &qdef->data.items);
 	qbe_append_def(ctx->out, qdef);
@@ -3833,11 +3834,12 @@ gen_decl(struct gen_context *ctx, const struct declaration *decl)
 }
 
 void
-gen(const struct unit *unit, struct qbe_program *out)
+gen(const struct unit *unit, struct qbe_program *out, struct intern_table *itbl)
 {
 	struct gen_context ctx = {
 		.out = out,
 		.ns = unit->ns,
+		.itbl = itbl,
 		.arch = {
 			.ptr = &qbe_long,
 			.sz = &qbe_long,

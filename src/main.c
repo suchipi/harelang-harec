@@ -35,7 +35,7 @@ usage(const char *argv_0)
 }
 
 static struct ast_global_decl *
-parse_define(const char *argv_0, const char *in)
+parse_define(const char *argv_0, const char *in, struct intern_table *itbl)
 {
 	struct ast_global_decl *def = xcalloc(1, sizeof(struct ast_global_decl));
 
@@ -48,9 +48,9 @@ parse_define(const char *argv_0, const char *in)
 	}
 	const char *d = "-D";
 	sources = &d;
-	lex_init(&lexer, f, 0);
+	lex_init(&lexer, f, 0, itbl);
 
-	parse_identifier(&lexer, &def->ident, false);
+	def->ident = parse_identifier(&lexer, NULL, NULL);
 	def->type = NULL;
 	if (lex(&lexer, &tok) == T_COLON) {
 		def->type = parse_type(&lexer);
@@ -74,11 +74,15 @@ main(int argc, char *argv[])
 	const char *output = NULL, *typedefs = NULL;
 	const char *target = DEFAULT_TARGET;
 	const char *modpath = NULL;
-	const char *mainsym = "main";
 	bool is_test = false;
 	struct unit unit = {0};
 	struct lexer lexer;
 	struct ast_global_decl *defines = NULL, **next_def = &defines;
+	struct intern_table itbl;
+
+	intern_init(&itbl);
+	const char *mainsym = intern_copy(&itbl, "main");
+	struct ident *mainident = intern_name(&itbl, mainsym);
 
 	int c;
 	while ((c = getopt(argc, argv, "a:D:hM:m:N:o:Tt:v")) != -1) {
@@ -87,7 +91,7 @@ main(int argc, char *argv[])
 			target = optarg;
 			break;
 		case 'D':
-			*next_def = parse_define(argv[0], optarg);
+			*next_def = parse_define(argv[0], optarg, &itbl);
 			next_def = &(*next_def)->next;
 			break;
 		case 'h':
@@ -100,11 +104,7 @@ main(int argc, char *argv[])
 			mainsym = optarg;
 			break;
 		case 'N':
-			unit.ns = xcalloc(1, sizeof(struct identifier));
-			if (strlen(optarg) == 0) {
-				unit.ns->name = "";
-				unit.ns->ns = NULL;
-			} else {
+			if (strlen(optarg) != 0) {
 				FILE *in = fmemopen(optarg, strlen(optarg), "r");
 				if (in == NULL) {
 					perror("fmemopen");
@@ -112,9 +112,12 @@ main(int argc, char *argv[])
 				}
 				const char *ns = "-N";
 				sources = &ns;
-				lex_init(&lexer, in, 0);
-				parse_identifier(&lexer, unit.ns, false);
+				lex_init(&lexer, in, 0, &itbl);
+				unit.ns = parse_identifier(&lexer, NULL, NULL);
 				lex_finish(&lexer);
+			} else {
+				const char *s = intern_copy(&itbl, "");
+				unit.ns = intern_name(&itbl, s);
 			}
 			break;
 		case 'o':
@@ -134,6 +137,8 @@ main(int argc, char *argv[])
 			return EXIT_USER;
 		}
 	}
+
+	mainsym = intern_copy(&itbl, mainsym);
 
 	builtin_types_init(target);
 
@@ -182,7 +187,7 @@ main(int argc, char *argv[])
 			return EXIT_ABNORMAL;
 		}
 
-		lex_init(&lexer, in,  i + 1);
+		lex_init(&lexer, in,  i + 1, &itbl);
 		parse(&lexer, subunit);
 		if (i + 1 < nsources) {
 			subunit->next = xcalloc(1, sizeof(struct ast_subunit));
@@ -192,7 +197,7 @@ main(int argc, char *argv[])
 	}
 
 	static type_store ts = {0};
-	check(&ts, is_test, mainsym, defines, &aunit, &unit);
+	check(&ts, is_test, mainsym, mainident, defines, &aunit, &unit, &itbl);
 
 	if (typedefs) {
 		FILE *out = fopen(typedefs, "w");
@@ -206,7 +211,7 @@ main(int argc, char *argv[])
 	}
 
 	struct qbe_program prog = {0};
-	gen(&unit, &prog);
+	gen(&unit, &prog, &itbl);
 
 	FILE *out;
 	if (!output) {

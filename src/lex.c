@@ -161,7 +161,7 @@ error(struct location loc, const char *fmt, ...)
 }
 
 void
-lex_init(struct lexer *lexer, FILE *f, int fileid)
+lex_init(struct lexer *lexer, FILE *f, int fileid, struct intern_table *itbl)
 {
 	lexer->in = f;
 	lexer->buflen = 0;
@@ -174,6 +174,7 @@ lex_init(struct lexer *lexer, FILE *f, int fileid)
 	lexer->c[0] = UINT32_MAX;
 	lexer->c[1] = UINT32_MAX;
 	lexer->require_int = false;
+	lexer->itbl = itbl;
 }
 
 void
@@ -291,7 +292,7 @@ lex_name(struct lexer *lexer, struct token *out)
 			error(out->loc, "Unknown attribute %s", lexer->buf);
 		}
 		out->token = T_NAME;
-		out->name = xstrdup(lexer->buf);
+		out->name = intern_copy(lexer->itbl, lexer->buf);
 	} else {
 		out->token = (const char **)token - tokens;
 	}
@@ -1069,23 +1070,6 @@ lex(struct lexer *lexer, struct token *out)
 	}
 
 	return out->token;
-}
-
-void
-token_finish(struct token *tok)
-{
-	switch (tok->token) {
-	case T_NAME:
-		free(tok->name);
-		break;
-	default:
-		break;
-	}
-	tok->token = 0;
-	tok->storage = 0;
-	tok->loc.file = 0;
-	tok->loc.colno = 0;
-	tok->loc.lineno = 0;
 }
 
 const char *

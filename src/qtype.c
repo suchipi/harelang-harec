@@ -57,7 +57,7 @@ tagged_qtype(struct gen_context *ctx,
 		values->exported = false;
 		values->type.stype = Q__UNION;
 		values->type.base = NULL;
-		values->type.name = values->name;
+		values->type.name = xstrdup(values->name);
 		values->type.size = type->size - type->align;
 
 		size_t nfield = 0;
@@ -94,7 +94,7 @@ tagged_qtype(struct gen_context *ctx,
 		batch->exported = false;
 		batch->type.stype = Q__AGGREGATE;
 		batch->type.base = NULL;
-		batch->type.name = batch->name;
+		batch->type.name = xstrdup(batch->name);
 		batch->type.size = type->size - type->align;
 
 		bfield = &batch->type.fields;
@@ -142,7 +142,7 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	def->name = gen_name(&ctx->id, "type.%d");
 	def->type.stype = Q__AGGREGATE;
 	def->type.base = type;
-	def->type.name = def->name;
+	def->type.name = xstrdup(def->name);
 
 	struct qbe_field *field = &def->type.fields;
 	if (type->size == SIZE_UNDEFINED
@@ -158,7 +158,6 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	switch (type->storage) {
 	case STORAGE_ARRAY:
 		if (type->array.length == SIZE_UNDEFINED) {
-			free(def->name);
 			free(def);
 			return &qbe_long; // Special case
 		}

@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <errno.h>
-#include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,19 +17,23 @@
 #include "types.h"
 #include "util.h"
 
-void
-mkident(struct context *ctx, struct identifier *out, const struct identifier *in,
-		const char *symbol)
+struct ident *
+mkident(struct context *ctx, struct ident *in, const char *symbol)
 {
 	if (symbol) {
-		out->name = xstrdup(symbol);
-		return;
+		return intern_name(ctx->itbl, symbol);
+	} else if (ctx->ns && in->ns == NULL) {
+		return intern_ident(ctx->itbl, in->name, ctx->ns);
+	} else {
+		return in;
 	}
-	identifier_dup(out, in);
-	if (ctx->ns && !in->ns) {
-		out->ns = xcalloc(1, sizeof(struct identifier));
-		identifier_dup(out->ns, ctx->ns);
-	}
+}
+
+static struct ident *
+intern_generated(struct context *ctx, const char *template)
+{
+	const char *s = intern_owned(ctx->itbl, gen_name(&ctx->id, template));
+	return intern_name(ctx->itbl, s);
 }
 
 void
@@ -192,10 +195,10 @@ check_expr_access(struct context *ctx,
 	struct scope_object *obj = NULL;
 	switch (expr->access.type) {
 	case ACCESS_IDENTIFIER:
-		obj = scope_lookup(ctx->scope, &aexpr->access.ident);
+		obj = scope_lookup(ctx->scope, aexpr->access.ident);
 		if (!obj) {
 			char buf[IDENT_BUFSIZ];
-			identifier_unparse_static(&aexpr->access.ident, buf);
+			ident_unparse_static(aexpr->access.ident, buf);
 			error(ctx, aexpr->loc, expr,
 				"Unknown object '%s'", buf);
 			return;
@@ -216,7 +219,7 @@ check_expr_access(struct context *ctx,
 		case O_TYPE:
 			if (type_dealias(ctx, obj->type)->storage != STORAGE_VOID &&
 					type_dealias(ctx, obj->type)->storage != STORAGE_DONE) {
-				char *ident = identifier_unparse(&obj->type->alias.ident);
+				char *ident = ident_unparse(obj->type->alias.ident);
 				error(ctx, aexpr->loc, expr,
 					"Cannot use non void or done type alias '%s' as literal",
 					ident);
@@ -1179,26 +1182,19 @@ create_unpack_bindings(struct context *ctx,
 			return;
 		}
 		if (aunpack->name != NULL) {
-			struct identifier ident = {
-				.name = aunpack->name,
-			};
 			if (unpack->object != NULL) {
 				unpack->next = xcalloc(1,
 					sizeof(struct binding_unpack));
 				unpack = unpack->next;
 			}
 			if (is_static) {
-				struct identifier gen = {0};
-
-				// Generate a static declaration identifier
-				gen.name = gen_name(&ctx->id, "static.%d");
-
-				unpack->object = scope_insert(
-					ctx->scope, O_DECL, &gen, &ident,
-					type_tuple->type, NULL);
+				// Generate a static declaration ident
+				unpack->object = scope_insert(ctx->scope, O_DECL,
+					intern_generated(ctx, "static.%d"),
+					aunpack->name, type_tuple->type, NULL);
 			} else {
-				unpack->object = scope_insert(
-					ctx->scope, O_BIND, &ident, &ident,
+				unpack->object = scope_insert(ctx->scope,
+					O_BIND, aunpack->name, aunpack->name,
 					type_tuple->type, NULL);
 			}
 			unpack->offset = type_tuple->offset;
@@ -1272,9 +1268,6 @@ check_expr_binding(struct context *ctx,
 			type = initializer->result;
 		}
 
-		struct identifier ident = {
-			.name = abinding->name,
-		};
 		if (expr->type == EXPR_DEFINE) {
 			if (type) {
 				initializer = lower_implicit_cast(
@@ -1288,8 +1281,8 @@ check_expr_binding(struct context *ctx,
 				type = &builtin_type_error;
 			}
 			binding->initializer = value;
-			binding->object = scope_insert(ctx->scope,
-				O_CONST, &ident, &ident, NULL, value);
+			binding->object = scope_insert(ctx->scope, O_CONST,
+				abinding->name, abinding->name, NULL, value);
 			goto done;
 		}
 		if (!type) {
@@ -1303,14 +1296,13 @@ check_expr_binding(struct context *ctx,
 				abinding->is_static, expr);
 		} else {
 			if (abinding->is_static) {
-				// Generate a static declaration identifier
-				struct identifier gen = {0};
-				gen.name = gen_name(&ctx->id, "static.%d");
-				binding->object = scope_insert(ctx->scope,
-					O_DECL, &gen, &ident, type, NULL);
+				// Generate a static declaration ident
+				binding->object = scope_insert(ctx->scope, O_DECL,
+					intern_generated(ctx, "static.%d"),
+					abinding->name, type, NULL);
 			} else {
-				binding->object = scope_insert(ctx->scope,
-					O_BIND, &ident, &ident, type, NULL);
+				binding->object = scope_insert(ctx->scope, O_BIND,
+					abinding->name, abinding->name, type, NULL);
 			}
 		}
 
@@ -1658,8 +1650,8 @@ check_expr_compound(struct context *ctx,
 	expr->compound.scope = scope;
 
 	if (aexpr->compound.label) {
-		expr->compound.label = xstrdup(aexpr->compound.label);
-		scope->label = xstrdup(aexpr->compound.label);
+		expr->compound.label = aexpr->compound.label;
+		scope->label = aexpr->compound.label;
 	}
 
 	struct expressions *list = &expr->compound.exprs;
@@ -2160,16 +2152,13 @@ check_expr_for_each(struct context *ctx,
 		create_unpack_bindings(ctx, var_type, initializer->loc,
 			abinding->unpack, abinding->is_static, binding);
 	} else {
-		struct identifier ident = {
-			.name = abinding->name,
-		};
 		if (var_type->size == SIZE_UNDEFINED) {
 			error(ctx, abinding->initializer->loc, binding,
 				"Cannot create binding of undefined size");
 			return;
 		}
-		binding->binding.object = scope_insert(ctx->scope, O_BIND, &ident,
-			&ident, var_type, NULL);
+		binding->binding.object = scope_insert(ctx->scope, O_BIND,
+			abinding->name, abinding->name, var_type, NULL);
 	}
 
 	if (binding_type != NULL && !type_is_assignable(ctx, var_type, initializer_result)) {
@@ -2215,8 +2204,8 @@ check_expr_for(struct context *ctx,
 	expr->_for.scope = scope;
 
 	if (aexpr->_for.label) {
-		expr->_for.label = xstrdup(aexpr->_for.label);
-		scope->label = xstrdup(aexpr->_for.label);
+		expr->_for.label = aexpr->_for.label;
+		scope->label = aexpr->_for.label;
 	}
 
 	switch (expr->_for.kind) {
@@ -2446,7 +2435,7 @@ check_expr_match(struct context *ctx,
 			}
 		}
 
-		if (acase->name) {
+		if (acase->name != NULL) {
 			assert(ctype);
 			if (ctype->size == SIZE_UNDEFINED) {
 				error(ctx, acase->type->loc, expr,
@@ -2458,13 +2447,9 @@ check_expr_match(struct context *ctx,
 					"Null is not a valid type for a binding");
 				return;
 			}
-			struct identifier ident = {
-				.name = acase->name,
-			};
-			struct scope *scope = scope_push(
-				&ctx->scope, SCOPE_MATCH);
-			_case->object = scope_insert(scope, O_BIND,
-				&ident, &ident, ctype, NULL);
+			struct scope *scope = scope_push(&ctx->scope, SCOPE_MATCH);
+			_case->object = scope_insert(scope, O_BIND, acase->name,
+				acase->name, ctype, NULL);
 		}
 
 		_case->value = xcalloc(1, sizeof(struct expression));
@@ -2482,7 +2467,7 @@ check_expr_match(struct context *ctx,
 		};
 		check_expression(ctx, &compound, _case->value, hint);
 
-		if (acase->name) {
+		if (acase->name != NULL) {
 			scope_pop(&ctx->scope);
 		}
 
@@ -2727,11 +2712,8 @@ check_expr_propagate(struct context *ctx,
 
 	struct scope_object *ok_obj = NULL, *err_obj = NULL;
 	if (result_type->size != SIZE_UNDEFINED) {
-		struct identifier ok_name = {
-			.name = gen_name(&ctx->id, "ok.%d"),
-		};
-		ok_obj = scope_insert(scope, O_BIND, &ok_name,
-			&ok_name, result_type, NULL);
+		struct ident *id = intern_generated(ctx, "ok.%d");
+		ok_obj = scope_insert(scope, O_BIND, id, id, result_type, NULL);
 	}
 
 	case_ok->type = result_type;
@@ -2759,11 +2741,8 @@ check_expr_propagate(struct context *ctx,
 		};
 	} else {
 		if (return_type->size != SIZE_UNDEFINED) {
-			struct identifier err_name = {
-				.name = gen_name(&ctx->id, "err.%d"),
-			};
-			err_obj = scope_insert(scope, O_BIND, &err_name,
-				&err_name, return_type, NULL);
+			struct ident *id = intern_generated(ctx, "err.%d");
+			err_obj = scope_insert(scope, O_BIND, id, id, return_type, NULL);
 		}
 		case_err->type = return_type;
 		case_err->object = err_obj;
@@ -3010,9 +2989,8 @@ check_expr_struct(struct context *ctx,
 	expr->type = EXPR_STRUCT;
 
 	const struct type *stype = NULL;
-	if (aexpr->_struct.type.name) {
-		struct scope_object *obj = scope_lookup(ctx->scope,
-				&aexpr->_struct.type);
+	if (aexpr->_struct.type != NULL) {
+		struct scope_object *obj = scope_lookup(ctx->scope, aexpr->_struct.type);
 		// resolve the unknown type
 		wrap_resolver(ctx, obj, resolve_type);
 		if (!obj) {
@@ -3763,8 +3741,8 @@ check_function(struct context *ctx,
 	decl->exported = adecl->exported;
 	decl->file = adecl->loc.file;
 
-	decl->symbol = ident_to_sym(&obj->ident);
-	mkident(ctx, &decl->ident, &afndecl->ident, NULL);
+	decl->symbol = ident_to_sym(ctx->itbl, obj->ident);
+	decl->ident = mkident(ctx, afndecl->ident, NULL);
 
 	if (!adecl->function.body) {
 		if (decl->func.flags != 0) {
@@ -3783,22 +3761,19 @@ check_function(struct context *ctx,
 	decl->func.scope = scope_push(&ctx->scope, SCOPE_FUNC);
 	struct ast_function_parameters *params = afndecl->prototype.params;
 	while (params) {
-		if (!params->name) {
+		if (params->name == NULL) {
 			error(ctx, params->loc, NULL,
 				"Function parameters must be named");
 			return;
 		}
-		struct identifier ident = {
-			.name = params->name,
-		};
 		const struct type *type = type_store_lookup_atype(
 				ctx, params->type);
 		if (obj->type->func.variadism == VARIADISM_HARE
 				&& !params->next) {
 			type = type_store_lookup_slice(ctx, params->loc, type);
 		}
-		scope_insert(decl->func.scope, O_BIND,
-			&ident, &ident, type, NULL);
+		scope_insert(decl->func.scope, O_BIND, params->name,
+				params->name, type, NULL);
 		params = params->next;
 	}
 
@@ -3868,8 +3843,7 @@ end:
 
 static struct incomplete_declaration *
 incomplete_declaration_create(struct context *ctx, struct location loc,
-		struct scope *scope, const struct identifier *ident,
-		const struct identifier *name)
+		struct scope *scope, struct ident *ident, struct ident *name)
 {
 	struct scope *subunit = ctx->unit->parent;
 	ctx->unit->parent = NULL;
@@ -3878,8 +3852,8 @@ incomplete_declaration_create(struct context *ctx, struct location loc,
 	ctx->unit->parent = subunit;
 
 	if (idecl) {
-		error_norec(ctx, loc, "Duplicate global identifier '%s'",
-			identifier_unparse(ident));
+		error_norec(ctx, loc, "Duplicate global ident '%s'",
+			ident_unparse(ident));
 	}
 	idecl =  xcalloc(1, sizeof(struct incomplete_declaration));
 
@@ -3909,16 +3883,9 @@ scan_enum_field(struct context *ctx, struct scope *imports,
 		.enum_scope = enum_scope,
 	};
 
-	struct identifier localname = {
-		.name = (char *)f->name,
-	};
-	struct identifier name = {
-		.name = (char *)f->name,
-		.ns = (struct identifier *)&etype->alias.name,
-	};
-	struct incomplete_declaration *fld =
-		incomplete_declaration_create(ctx, f->loc, enum_scope,
-				&name, &localname);
+	struct ident *name = intern_ident(ctx->itbl, f->name->name, etype->alias.name);
+	struct incomplete_declaration *fld = incomplete_declaration_create(
+			ctx, f->loc, enum_scope, name, f->name);
 	fld->type = IDECL_ENUM_FLD;
 	fld->imports = imports;
 	fld->obj.type = etype,
@@ -3929,20 +3896,14 @@ static void
 check_hosted_main(struct context *ctx,
 	struct location loc,
 	const struct ast_decl *decl,
-	struct identifier ident,
+	struct ident *ident,
 	const char *symbol)
 {
 	if (*ctx->mainsym == '\0' || ctx->is_test) {
 		return;
 	}
-	if (symbol != NULL) {
-		if (strcmp(symbol, ctx->mainsym) != 0) {
-			return;
-		}
-	} else {
-		if (strcmp(ident.name, "main") != 0 || ident.ns != NULL) {
-			return;
-		}
+	if (symbol != ctx->mainsym && (symbol != NULL || ident != ctx->mainident)) {
+		return;
 	}
 
 	const struct ast_function_decl *func;
@@ -3983,12 +3944,11 @@ static void
 scan_types(struct context *ctx, struct scope *imp, const struct ast_decl *decl)
 {
 	for (const struct ast_type_decl *t = &decl->type; t; t = t->next) {
-		struct identifier with_ns = {0};
-		mkident(ctx, &with_ns, &t->ident, NULL);
+		struct ident *with_ns = mkident(ctx,  t->ident, NULL);
 		check_hosted_main(ctx, decl->loc, NULL, with_ns, NULL);
 		struct incomplete_declaration *idecl =
 			incomplete_declaration_create(ctx, decl->loc, ctx->scope,
-					&with_ns, &t->ident);
+					with_ns, t->ident);
 		idecl->decl = (struct ast_decl){
 			.decl_type = ADECL_TYPE,
 			.loc = decl->loc,
@@ -4169,7 +4129,7 @@ end:
 		return;
 	}
 	struct scope_object *shadow_obj =
-		scope_lookup(ctx->defines, &idecl->obj.ident);
+		scope_lookup(ctx->defines, idecl->obj.ident);
 	if (shadow_obj && &idecl->obj != shadow_obj) {
 		// Shadowed by define
 		if (type_is_flexible(value->result)
@@ -4242,7 +4202,6 @@ resolve_global(struct context *ctx, struct incomplete_declaration *idecl)
 {
 	const struct ast_global_decl *decl = &idecl->decl.global;
 	const struct type *type = NULL;
-	struct identifier name = {0};
 	bool context = false;
 	struct expression *init, *value = NULL;
 	if (decl->type) {
@@ -4308,8 +4267,8 @@ resolve_global(struct context *ctx, struct incomplete_declaration *idecl)
 		check_exported_type(ctx, loc, type);
 	}
 
-	mkident(ctx, &name, &idecl->obj.name, NULL);
-end:
+end:;
+	struct ident *name = mkident(ctx, idecl->obj.name, NULL);
 	idecl->obj.otype = O_DECL;
 	idecl->obj.type = type;
 	if (decl->threadlocal) {
@@ -4320,7 +4279,7 @@ end:
 		.decl_type = DECL_GLOBAL,
 		.file = idecl->decl.loc.file,
 		.ident = name,
-		.symbol = ident_to_sym(&idecl->obj.ident),
+		.symbol = ident_to_sym(ctx->itbl, idecl->obj.ident),
 
 		.exported = idecl->decl.exported,
 		.global = {
@@ -4338,12 +4297,8 @@ resolve_enum_field(struct context *ctx, struct incomplete_declaration *idecl)
 
 	const struct type *type = idecl->obj.type;
 
-	struct identifier localname = {
-		.name = idecl->obj.ident.name
-	};
-
-	struct scope_object *new =
-		scope_lookup(idecl->field->enum_scope, &localname);
+	struct ident *localname = intern_name(ctx->itbl, idecl->obj.ident->name);
+	struct scope_object *new = scope_lookup(idecl->field->enum_scope,localname);
 	if (new != &idecl->obj) {
 		wrap_resolver(ctx, new, resolve_enum_field);
 		assert(new->otype == O_CONST);
@@ -4366,7 +4321,7 @@ resolve_enum_field(struct context *ctx, struct incomplete_declaration *idecl)
 			char *builtintypename = gen_typename(type->alias.type);
 			error_norec(ctx, idecl->field->field->value->loc,
 				"Enum value type (%s) is not assignable from initializer type (%s) for value %s",
-				builtintypename, inittypename, idecl->obj.ident.name);
+				builtintypename, inittypename, idecl->obj.ident->name);
 		}
 
 		initializer = lower_implicit_cast(ctx, type, initializer);
@@ -4422,10 +4377,8 @@ lookup_enum_type(struct context *ctx, const struct scope_object *obj)
 			assert(false);
 		} else if (idecl->decl.type.type->storage == STORAGE_ALIAS) {
 			ctx->scope->parent = idecl->imports;
-			const struct identifier *alias =
-				&idecl->decl.type.type->alias;
 			const struct scope_object *new = scope_lookup(ctx->scope,
-					alias);
+					idecl->decl.type.type->alias);
 			if (new) {
 				idecl->in_progress = true;
 				enum_type = lookup_enum_type(ctx, new);
@@ -4468,19 +4421,11 @@ scan_enum_field_aliases(struct context *ctx, struct scope_object *obj)
 
 	for (const struct scope_object *val = enum_type->_enum.values->objects;
 			val; val = val->lnext) {
-		struct identifier name = {
-			.name = val->name.name,
-			.ns = (struct identifier *)&obj->name,
-		};
-		struct identifier ident = {
-			.name = val->name.name,
-			.ns = (struct identifier *)&obj->ident,
-		};
 		struct ast_enum_field *afield =
 			xcalloc(1, sizeof(struct ast_enum_field));
 		*afield = (struct ast_enum_field){
 			.loc = (struct location){0}, // XXX: what to put here?
-			.name = xstrdup(val->name.name),
+			.name = (struct ident *)val->name,
 		};
 
 		struct incomplete_enum_field *field =
@@ -4492,8 +4437,10 @@ scan_enum_field_aliases(struct context *ctx, struct scope_object *obj)
 			.enum_scope = idecl->field->enum_scope,
 		};
 
+		struct ident *name =
+			intern_ident(ctx->itbl, val->name->name, obj->name);
 		idecl = incomplete_declaration_create(ctx, (struct location){0},
-			ctx->scope, &ident, &name);
+			ctx->scope, name, name);
 		idecl->type = IDECL_ENUM_FLD;
 		idecl->obj.type = obj->type;
 		idecl->field = field;
@@ -4510,7 +4457,7 @@ resolve_dimensions(struct context *ctx, struct incomplete_declaration *idecl)
 		} else {
 			loc = idecl->decl.loc;
 		}
-		char *ident = identifier_unparse(&idecl->obj.name);
+		char *ident = ident_unparse(idecl->obj.name);
 		error(ctx, loc, NULL, "'%s' is not a type", ident);
 		free(ident);
 		idecl->obj.type = &builtin_type_error;
@@ -4537,7 +4484,7 @@ resolve_type(struct context *ctx, struct incomplete_declaration *idecl)
 
 	if (idecl->type != IDECL_DECL || idecl->decl.decl_type != ADECL_TYPE) {
 		error_norec(ctx, loc, "'%s' is not a type",
-				identifier_unparse(&idecl->obj.name));
+				ident_unparse(idecl->obj.name));
 	}
 
 	// compute type dimensions
@@ -4548,7 +4495,7 @@ resolve_type(struct context *ctx, struct incomplete_declaration *idecl)
 
 	// compute type representation and store it
 	struct type *alias = (struct type *)type_store_lookup_alias(ctx,
-			&idecl->obj.ident, &idecl->obj.name, NULL,
+			idecl->obj.ident, idecl->obj.name, NULL,
 			idecl->decl.type.type->flags, idecl->decl.exported);
 	idecl->obj.otype = O_TYPE;
 	idecl->obj.type = alias;
@@ -4589,12 +4536,11 @@ static struct incomplete_declaration *
 scan_const(struct context *ctx, struct scope *imports, bool exported,
 		struct location loc, const struct ast_global_decl *decl)
 {
-	struct identifier with_ns = {0};
-	mkident(ctx, &with_ns, &decl->ident, NULL);
+	struct ident *with_ns = mkident(ctx, decl->ident, NULL);
 	check_hosted_main(ctx, loc, NULL, with_ns, NULL);
 	struct incomplete_declaration *idecl =
 		incomplete_declaration_create(ctx, loc,
-				ctx->scope, &with_ns, &decl->ident);
+				ctx->scope, with_ns, decl->ident);
 	idecl->type = IDECL_DECL;
 	idecl->decl = (struct ast_decl){
 		.decl_type = ADECL_CONST,
@@ -4610,7 +4556,7 @@ static void
 scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *decl)
 {
 	struct incomplete_declaration *idecl = {0};
-	struct identifier ident = {0};
+	struct ident *ident;
 	switch (decl->decl_type) {
 	case ADECL_CONST:
 		for (const struct ast_global_decl *g = &decl->constant;
@@ -4621,10 +4567,10 @@ scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *dec
 	case ADECL_GLOBAL:
 		for (const struct ast_global_decl *g = &decl->global;
 				g; g = g->next) {
-			mkident(ctx, &ident, &g->ident, g->symbol);
+			ident = mkident(ctx, g->ident, g->symbol);
 			check_hosted_main(ctx, decl->loc, NULL, ident, g->symbol);
 			idecl = incomplete_declaration_create(ctx, decl->loc,
-				ctx->scope, &ident, &g->ident);
+				ctx->scope, ident, g->ident);
 			idecl->type = IDECL_DECL;
 			idecl->decl = (struct ast_decl){
 				.decl_type = ADECL_GLOBAL,
@@ -4637,7 +4583,7 @@ scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *dec
 		break;
 	case ADECL_FUNC:;
 		const struct ast_function_decl *func = &decl->function;
-		const struct identifier *name = NULL;
+		struct ident *name;
 		if (func->flags) {
 			const char *template = NULL;
 			if (func->flags & FN_TEST) {
@@ -4648,16 +4594,13 @@ scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *dec
 				template = "finifunc.%d";
 			}
 			assert(template);
-			ident.name = gen_name(&ctx->id, template);
-			++ctx->id;
-
-			name = &ident;
+			ident = name = intern_generated(ctx, template);
 		} else {
-			mkident(ctx, &ident, &func->ident, func->symbol);
-			name = &func->ident;
+			ident = mkident(ctx, func->ident, func->symbol);
+			name = func->ident;
 		}
 		idecl = incomplete_declaration_create(ctx, decl->loc,
-			ctx->scope, &ident, name);
+			ctx->scope, ident, name);
 		check_hosted_main(ctx, decl->loc, decl, ident, func->symbol);
 		idecl->type = IDECL_DECL;
 		idecl->decl = (struct ast_decl){
@@ -4672,13 +4615,8 @@ scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *dec
 		scan_types(ctx, imports, decl);
 		break;
 	case ADECL_ASSERT:;
-		static uint64_t num = 0;
-		int n = snprintf(NULL, 0, "static assert %" PRIu64, num);
-		ident.name = xcalloc(n + 1, sizeof(char));
-		snprintf(ident.name, n + 1, "static assert %" PRIu64, num);
-		++num;
-		idecl = incomplete_declaration_create(ctx, decl->loc,
-			ctx->scope, &ident, &ident);
+		struct ident *id = intern_generated(ctx, "static_assert.%d");
+		idecl = incomplete_declaration_create(ctx, decl->loc, ctx->scope, id, id);
 		idecl->type = IDECL_DECL;
 		idecl->decl = (struct ast_decl){
 			.decl_type = ADECL_ASSERT,
@@ -4755,7 +4693,7 @@ wrap_resolver(struct context *ctx, struct scope_object *obj, resolvefn resolver)
 			loc = idecl->decl.loc;
 		}
 		error_norec(ctx, loc, "Circular dependency for '%s'",
-			identifier_unparse(&idecl->obj.name));
+			ident_unparse(idecl->obj.name));
 	}
 	idecl->in_progress = true;
 
@@ -4774,29 +4712,23 @@ static void
 load_import(struct context *ctx, const struct ast_global_decl *defines,
 	struct ast_imports *import, struct scope *scope)
 {
-	struct scope *mod = module_resolve(ctx, defines, &import->ident);
+	struct scope *mod = module_resolve(ctx, defines, import->ident);
 
 	if (import->mode == IMPORT_MEMBERS) {
 		for (const struct ast_import_members *member = import->members;
 				member; member = member->next) {
-			struct identifier name = {
-				.name = member->name,
-			};
-			struct identifier ident = {
-				.name = member->name,
-				.ns = &import->ident,
-			};
-			const struct scope_object *obj = scope_lookup(mod, &ident);
+			struct ident *ident = intern_ident(ctx->itbl,
+					member->name->name, import->ident);
+			const struct scope_object *obj = scope_lookup(mod, ident);
 			if (!obj) {
 				error_norec(ctx, member->loc, "Unknown object '%s'",
-						identifier_unparse(&ident));
+						ident_unparse(ident));
 			}
 			assert(obj->otype != O_SCAN);
 			// obj->type and obj->value are a union, so it doesn't
 			// matter which is passed into scope_insert
-			struct scope_object *new = scope_insert(
-					scope, obj->otype, &obj->ident,
-					&name, obj->type, NULL);
+			struct scope_object *new = scope_insert(scope,
+				obj->otype, obj->ident, member->name, obj->type, NULL);
 			new->flags = obj->flags;
 			if (obj->otype != O_TYPE
 					|| type_dealias(ctx, obj->type)->storage
@@ -4807,29 +4739,24 @@ load_import(struct context *ctx, const struct ast_global_decl *defines,
 				type_dealias(ctx, obj->type)->_enum.values;
 			for (const struct scope_object *o = enum_scope->objects;
 					o; o = o->lnext) {
-				struct identifier value_ident = {
-					.name = o->name.name,
-					.ns = &ident,
-				};
-				struct identifier value_name = {
-					.name = o->name.name,
-					.ns = &name,
-				};
-				scope_insert(scope, o->otype, &value_ident,
-					&value_name, NULL, o->value);
+				struct ident *value_ident =
+					intern_ident(ctx->itbl, o->name->name, ident);
+				struct ident *value_name =
+					intern_ident(ctx->itbl, o->name->name, member->name);
+				scope_insert(scope, o->otype, value_ident,
+					value_name, NULL, o->value);
 			}
 		}
 		return;
 	}
 
-	struct identifier _ident = {0};
-	struct identifier *prefix = &_ident;
+	struct ident *prefix;
 	switch (import->mode) {
 	case IMPORT_NORMAL:
-		prefix->name = import->ident.name;
+		prefix = intern_name(ctx->itbl, import->ident->name);
 		break;
 	case IMPORT_ALIAS:
-		prefix->name = import->alias;
+		prefix = intern_name(ctx->itbl, import->alias);
 		break;
 	case IMPORT_WILDCARD:
 		prefix = NULL;
@@ -4846,38 +4773,35 @@ load_import(struct context *ctx, const struct ast_global_decl *defines,
 		if (import->mode == IMPORT_NORMAL) {
 			// obj->type and obj->value are a union, so it doesn't
 			// matter which is passed into scope_insert
-			new = scope_insert(scope, obj->otype, &obj->ident,
-				&obj->name, obj->type, NULL);
+			new = scope_insert(scope, obj->otype, obj->ident,
+				obj->name, obj->type, NULL);
 			new->flags = obj->flags;
 		}
 
-		struct identifier ns, name = {
-			.name = obj->name.name,
-			.ns = prefix,
-		};
-		if (obj->name.ns == NULL) {
+		struct ident *name;
+		if (obj->name->ns == NULL) {
 			// this is only possible if an invalid .td file is used.
 			// this check is necessary since the scope_lookup below
 			// will segfault if obj->name.ns is NULL
 			error_norec(ctx, (struct location){0},
 				"Invalid typedefs for %s",
-				identifier_unparse(&import->ident));
+				ident_unparse(import->ident));
 		}
-		const struct scope_object *_enum = scope_lookup(mod, obj->name.ns);
+		const struct scope_object *_enum = scope_lookup(mod, obj->name->ns);
 		if (_enum != NULL && _enum->otype == O_TYPE
 				&& type_dealias(NULL, _enum->type)->storage == STORAGE_ENUM) {
-			// include enum type in identifier if object is an enum
+			// include enum type in ident if object is an enum
 			// constant
-			ns = (struct identifier){
-				.name = obj->name.ns->name,
-				.ns = prefix,
-			};
-			name.ns = &ns;
+			struct ident *ns =
+				intern_ident(ctx->itbl, obj->name->ns->name, prefix);
+			name = intern_ident(ctx->itbl, obj->name->name, ns);
+		} else {
+			name = intern_ident(ctx->itbl, obj->name->name, prefix);
 		}
 		// obj->type and obj->value are a union, so it doesn't matter
 		// which is passed into scope_insert
-		new = scope_insert(scope, obj->otype, &obj->ident,
-			&name, obj->type, NULL);
+		new = scope_insert(scope, obj->otype, obj->ident, name,
+			obj->type, NULL);
 		new->flags = obj->flags;
 	}
 }
@@ -4893,18 +4817,22 @@ check_internal(type_store *ts,
 	struct modcache **cache,
 	bool is_test,
 	const char *mainsym,
+	struct ident *mainident,
 	const struct ast_global_decl *defines,
 	const struct ast_unit *aunit,
 	struct unit *unit,
+	struct intern_table *itbl,
 	bool scan_only)
 {
 	struct context ctx = {0};
 	ctx.ns = unit->ns;
 	ctx.is_test = is_test;
 	ctx.mainsym = mainsym;
+	ctx.mainident = mainident;
 	ctx.store = ts;
 	ctx.next = &ctx.errors;
 	ctx.modcache = cache;
+	ctx.itbl = itbl;
 
 	// Top-level scope management involves:
 	//
@@ -4948,7 +4876,7 @@ check_internal(type_store *ts,
 			bool found = false;
 			for (struct identifiers *uimports = unit->imports;
 					uimports; uimports = uimports->next) {
-				if (identifier_eq(&uimports->ident, &imports->ident)) {
+				if (uimports->ident == imports->ident) {
 					found = true;
 					break;
 				}
@@ -4956,7 +4884,7 @@ check_internal(type_store *ts,
 			if (!found) {
 				struct identifiers *uimport = *inext =
 					xcalloc(1, sizeof(struct identifiers));
-				identifier_dup(&uimport->ident, &imports->ident);
+				uimport->ident = imports->ident;
 				inext = &uimport->next;
 			}
 		}
@@ -4982,7 +4910,7 @@ check_internal(type_store *ts,
 	for (const struct scope_object *obj = ctx.scope->objects;
 			obj; obj = obj->lnext) {
 		const struct scope_object *shadowed_obj =
-			scope_lookup(ctx.unit, &obj->name);
+			scope_lookup(ctx.unit, obj->name);
 		if (!shadowed_obj) {
 			continue;
 		}
@@ -5030,10 +4958,12 @@ struct scope *
 check(type_store *ts,
 	bool is_test,
 	const char *mainsym,
+	struct ident *mainident,
 	const struct ast_global_decl *defines,
 	const struct ast_unit *aunit,
-	struct unit *unit)
+	struct unit *unit,
+	struct intern_table *itbl)
 {
 	struct modcache *modcache[MODCACHE_BUCKETS] = {0};
-	return check_internal(ts, modcache, is_test, mainsym, defines, aunit, unit, false);
+	return check_internal(ts, modcache, is_test, mainsym, mainident, defines, aunit, unit, itbl, false);
 }

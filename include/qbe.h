@@ -61,7 +61,7 @@ struct qbe_value {
 	bool threadlocal;
 	const struct qbe_type *type;
 	union {
-		char *name;
+		const char *name;
 		uint32_t wval;
 		uint64_t lval;
 		float sval;
@@ -230,7 +230,7 @@ struct qbe_data_item {
 			size_t sz;
 		};
 		struct {
-			char *sym;
+			const char *sym;
 			int64_t offset;
 		};
 	};
@@ -251,7 +251,7 @@ enum qbe_defkind {
 };
 
 struct qbe_def {
-	char *name;
+	const char *name;
 	int file;
 	enum qbe_defkind kind;
 	bool exported;

@@ -22,7 +22,7 @@ struct gen_value {
 	bool threadlocal;
 	const struct type *type;
 	union {
-		char *name;
+		const char *name;
 		uint32_t wval;
 		uint64_t lval;
 		float sval;
@@ -64,7 +64,7 @@ struct rt {
 struct gen_context {
 	struct qbe_program *out;
 	struct gen_arch arch;
-	struct identifier *ns;
+	const struct ident *ns;
 	struct rt rt;
 	struct gen_value *sources;
 
@@ -73,11 +73,14 @@ struct gen_context {
 	struct qbe_func *current;
 	struct gen_binding *bindings;
 	struct gen_scope *scope;
+
+	struct intern_table *itbl;
 };
 
 struct unit;
 
-void gen(const struct unit *unit, struct qbe_program *out);
+void gen(const struct unit *unit, struct qbe_program *out,
+		struct intern_table *itbl);
 
 // genutil.c
 void rtfunc_init(struct gen_context *ctx);

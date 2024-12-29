@@ -3,11 +3,9 @@
 
 struct ast_global_decl;
 struct context;
-struct scope;
-struct identifier;
+struct ident;
 
 struct scope *module_resolve(struct context *ctx,
-	const struct ast_global_decl *defines,
-	const struct identifier *ident);
+	const struct ast_global_decl *defines, struct ident *ident);
 
 #endif

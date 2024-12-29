@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include "check.h"
 #include "eval.h"
+#include "identifier.h"
 #include "scope.h"
 #include "type_store.h"
 #include "types.h"
@@ -159,7 +160,7 @@ struct_new_field(struct context *ctx, struct type *type,
 	struct struct_field *field = xcalloc(1, sizeof(struct struct_field));
 
 	if (afield->name && !size_only) {
-		field->name = xstrdup(afield->name);
+		field->name = afield->name;
 	}
 	struct dimensions dim = {0};
 	if (size_only) {
@@ -313,7 +314,7 @@ shift_fields(struct context *ctx,
 		new->type = field->type;
 		new->offset = parent->offset;
 		if (field->name) {
-			new->name = xstrdup(field->name);
+			new->name = field->name;
 		} else {
 			shift_fields(ctx, NULL, new);
 		}
@@ -422,9 +423,9 @@ tagged_or_atagged_member(struct context *ctx,
 	const struct ast_type *_atype = *atype;
 	while (_atype->storage == STORAGE_ALIAS && _atype->unwrap) {
 		const struct scope_object *obj = scope_lookup(
-			ctx->scope, &_atype->alias);
+			ctx->scope, _atype->alias);
 		if (!obj) {
-			char *ident = identifier_unparse(&_atype->alias);
+			char *ident = ident_unparse(_atype->alias);
 			error(ctx, _atype->loc, NULL,
 				"Unknown object '%s'", ident);
 			free(ident);
@@ -436,7 +437,7 @@ tagged_or_atagged_member(struct context *ctx,
 				*type = type_dealias(ctx, obj->type);
 				return;
 			} else {
-				char *ident = identifier_unparse(&obj->ident);
+				char *ident = ident_unparse(obj->ident);
 				error(ctx, _atype->loc, NULL,
 					"Object '%s' is not a type", ident);
 				free(ident);
@@ -448,7 +449,7 @@ tagged_or_atagged_member(struct context *ctx,
 			(struct incomplete_declaration *)obj;
 		if (idecl->type != IDECL_DECL
 				|| idecl->decl.decl_type != ADECL_TYPE) {
-			char *ident = identifier_unparse(&obj->ident);
+			char *ident = ident_unparse(obj->ident);
 			error(ctx, _atype->loc, NULL,
 				"Object '%s' is not a type", ident);
 			free(ident);
@@ -794,9 +795,9 @@ type_init_from_atype(struct context *ctx,
 		type->align = builtin->align;
 		break;
 	case STORAGE_ALIAS:
-		obj = scope_lookup(ctx->scope, &atype->alias);
+		obj = scope_lookup(ctx->scope, atype->alias);
 		if (!obj) {
-			char *ident = identifier_unparse(&atype->alias);
+			char *ident = ident_unparse(atype->alias);
 			error(ctx, atype->loc, NULL,
 				"Unresolvable identifier '%s'", ident);
 			free(ident);
@@ -819,7 +820,7 @@ type_init_from_atype(struct context *ctx,
 		}
 
 		if (obj->otype != O_TYPE) {
-			char *ident = identifier_unparse(&obj->ident);
+			char *ident = ident_unparse(obj->ident);
 			error(ctx, atype->loc, NULL,
 				"Object '%s' is not a type", ident);
 			free(ident);
@@ -834,8 +835,8 @@ type_init_from_atype(struct context *ctx,
 			*type = *type_dealias(ctx, obj->type);
 			break;
 		}
-		identifier_dup(&type->alias.ident, &obj->ident);
-		identifier_dup(&type->alias.name, &obj->name);
+		type->alias.ident = obj->ident;
+		type->alias.name = obj->name;
 		type->alias.type = obj->type->alias.type;
 		type->alias.exported = obj->type->alias.exported;
 		type->size = obj->type->size;
@@ -1050,7 +1051,7 @@ type_store_lookup_atype(struct context *ctx, const struct ast_type *atype)
 		// References to type aliases always inherit the flags that the
 		// alias was defined with
 		const struct scope_object *obj = scope_lookup(
-			ctx->scope, &temp.alias.name);
+			ctx->scope, temp.alias.name);
 		temp.flags |= obj->type->flags;
 	}
 	return type_store_lookup_type(ctx, &temp);
@@ -1180,18 +1181,18 @@ type_store_lookup_slice(struct context *ctx, struct location loc,
 }
 
 const struct type *
-type_store_lookup_alias(struct context *ctx, const struct identifier *ident,
-	const struct identifier *name, const struct type *secondary, int flags,
+type_store_lookup_alias(struct context *ctx, struct ident *ident,
+	struct ident *name, const struct type *secondary, int flags,
 	bool exported)
 {
 	struct type type = {
 		.storage = STORAGE_ALIAS,
 		.flags = flags,
 		.alias.type = secondary,
+		.alias.ident = ident,
+		.alias.name = name,
 		.alias.exported = exported,
 	};
-	identifier_dup(&type.alias.name, name);
-	identifier_dup(&type.alias.ident, ident);
 	return type_store_lookup_type(ctx, &type);
 }
 
@@ -1271,8 +1272,8 @@ type_store_lookup_enum(struct context *ctx, const struct ast_type *atype,
 	struct type type = {0};
 	type.storage = STORAGE_ENUM;
 	type.flags = atype->flags;
-	mkident(ctx, &type.alias.ident, &atype->alias, NULL);
-	identifier_dup(&type.alias.name, &atype->alias);
+	type.alias.ident = mkident(ctx, atype->alias, NULL);
+	type.alias.name = atype->alias;
 	type.alias.exported = exported;
 	type.alias.type = builtin_type_for_storage(atype->_enum.storage);
 	if (!type_is_integer(ctx, type.alias.type)

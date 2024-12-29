@@ -184,7 +184,7 @@ struct expression_call {
 };
 
 struct expression_compound {
-	char *label;
+	const char *label;
 	struct scope *scope;
 	struct expressions exprs;
 };
@@ -244,7 +244,7 @@ struct expression_literal {
 };
 
 struct expression_control {
-	char *label;
+	const char *label;
 	const struct scope *scope;
 	struct expression *value; // Only set for yield
 };
@@ -268,7 +268,7 @@ enum for_kind {
 
 struct expression_for {
 	enum for_kind kind;
-	char *label;
+	const char *label;
 	struct scope *scope;
 	struct expression *bindings;
 	struct expression *cond;

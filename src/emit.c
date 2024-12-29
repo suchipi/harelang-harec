@@ -201,8 +201,7 @@ static void
 emit_func(const struct qbe_def *def, FILE *out)
 {
 	assert(def->kind == Q_FUNC);
-	xfprintf(out, "section \".text.%s\" \"ax\"%s\nfunction",
-			def->name,
+	xfprintf(out, "section \".text.%s\" \"ax\"%s\nfunction", def->name,
 			def->exported ? " export" : "");
 	if (def->func.returns->stype != Q__VOID) {
 		xfprintf(out, " ");

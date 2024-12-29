@@ -33,7 +33,7 @@ complete_alias(struct context *ctx, struct type *type)
 {
 	assert(type->storage == STORAGE_ALIAS);
 	const struct scope_object *obj =
-		scope_lookup(ctx->scope, &type->alias.name);
+		scope_lookup(ctx->scope, type->alias.name);
 	assert(obj != NULL);
 	assert(obj->otype == O_TYPE || obj->otype == O_SCAN);
 	struct incomplete_declaration *idecl =
@@ -41,7 +41,7 @@ complete_alias(struct context *ctx, struct type *type)
 	assert(idecl->type == IDECL_DECL);
 
 	if (idecl->dealias_in_progress) {
-		char *identstr = identifier_unparse(&idecl->obj.name);
+		char *identstr = ident_unparse(idecl->obj.name);
 		error(ctx, idecl->decl.loc, NULL,
 			"Circular dependency for '%s'", identstr);
 		free(identstr);
@@ -414,11 +414,7 @@ type_hash(const struct type *type)
 		hash = fnv1a(hash, type->alias.type->storage);
 		/* fallthrough */
 	case STORAGE_ALIAS:
-		for (const struct identifier *ident = &type->alias.ident; ident;
-				ident = ident->ns) {
-			hash = fnv1a_s(hash, ident->name);
-			hash = fnv1a(hash, 0);
-		}
+		hash = ident_hash(hash, type->alias.ident);
 		break;
 	case STORAGE_ARRAY:
 		hash = fnv1a_u32(hash, type_hash(type->array.members));

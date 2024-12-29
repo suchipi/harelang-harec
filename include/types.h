@@ -55,8 +55,8 @@ struct type;
 #define ALIGN_UNDEFINED ((size_t)-1)
 
 struct type_alias {
-	struct identifier ident;
-	struct identifier name;
+	struct ident *ident;
+	struct ident *name;
 	const struct type *type;
 	bool exported; // Used to make sure unexported aliases aren't emitted
 };
@@ -103,7 +103,7 @@ struct type_pointer {
 };
 
 struct struct_field {
-	char *name;
+	const char *name;
 	const struct type *type;
 	size_t offset;
 	size_t size;

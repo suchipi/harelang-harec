@@ -16,14 +16,13 @@
 #define strlen_HARE_TD_ (sizeof("HARE_TD_") - 1)
 
 struct scope *
-module_resolve(struct context *ctx,
-	const struct ast_global_decl *defines,
-	const struct identifier *ident)
+module_resolve(struct context *ctx, const struct ast_global_decl *defines,
+	struct ident *ident)
 {
-	uint32_t hash = identifier_hash(FNV1A_INIT, ident);
+	uint32_t hash = ident_hash(FNV1A_INIT, ident);
 	struct modcache **bucket = &ctx->modcache[hash % MODCACHE_BUCKETS];
 	for (; *bucket; bucket = &(*bucket)->next) {
-		if (identifier_eq(&(*bucket)->ident, ident)) {
+		if ((*bucket)->ident == ident) {
 			return (*bucket)->scope;
 		}
 	}
@@ -33,7 +32,7 @@ module_resolve(struct context *ctx,
 
 	// env = "HARE_TD_foo::bar::baz"
 	char env[strlen_HARE_TD_ + IDENT_BUFSIZ] = "HARE_TD_";
-	identifier_unparse_static(ident, &env[strlen_HARE_TD_]);
+	ident_unparse_static(ident, &env[strlen_HARE_TD_]);
 
 	char *path = getenv(env);
 	if (!path) {
@@ -51,19 +50,20 @@ module_resolve(struct context *ctx,
 
 	const char *old = sources[0];
 	sources[0] = path;
-	lex_init(&lexer, f, 0);
+	lex_init(&lexer, f, 0, ctx->itbl);
 	parse(&lexer, &aunit.subunits);
 	lex_finish(&lexer);
 
 	// TODO: Free unused bits
 	struct unit u = {0};
 	struct scope *scope = check_internal(ctx->store, ctx->modcache,
-		ctx->is_test, ctx->mainsym, defines, &aunit, &u, true);
+		ctx->is_test, ctx->mainsym, ctx->mainident, defines, &aunit,
+		&u, ctx->itbl, true);
 
 	sources[0] = old;
 	bucket = &ctx->modcache[hash % MODCACHE_BUCKETS];
 	struct modcache *item = xcalloc(1, sizeof(struct modcache));
-	identifier_dup(&item->ident, ident);
+	item->ident = ident;
 	item->scope = scope;
 	item->next = *bucket;
 	*bucket = item;

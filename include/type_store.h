@@ -43,7 +43,7 @@ const struct type *type_store_lookup_slice(struct context *ctx,
 	struct location loc, const struct type *members);
 
 const struct type *type_store_lookup_alias(struct context *ctx,
-	const struct identifier *ident, const struct identifier *name,
+	struct ident *ident, struct ident *name,
 	const struct type *secondary, int flags, bool exported);
 
 const struct type *type_store_lookup_tagged(struct context *ctx,

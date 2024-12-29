@@ -18,15 +18,15 @@ enum ast_import_mode {
 
 struct ast_import_members {
 	struct location loc;
-	char *name;
+	struct ident *name;
 	struct ast_import_members *next;
 };
 
 struct ast_imports {
 	enum ast_import_mode mode;
-	struct identifier ident;
+	struct ident *ident;
 	union {
-		char *alias;
+		const char *alias;
 		struct ast_import_members *members;
 	};
 	struct ast_imports *next;
@@ -44,7 +44,7 @@ struct ast_slice_type {
 
 struct ast_enum_field {
 	struct location loc;
-	char *name;
+	struct ident *name;
 	struct ast_expression *value;
 	struct ast_enum_field *next;
 };
@@ -56,7 +56,7 @@ struct ast_enum_type {
 
 struct ast_function_parameters {
 	struct location loc;
-	char *name;
+	struct ident *name;
 	struct ast_type *type;
 	struct ast_expression *default_value;
 	struct ast_function_parameters *next;
@@ -86,7 +86,7 @@ struct ast_tuple_type {
 struct ast_struct_union_field {
 	struct ast_struct_union_field *next;
 	struct ast_expression *offset;
-	char *name;
+	const char *name;
 	struct ast_type *type;
 };
 
@@ -108,7 +108,7 @@ struct ast_type {
 		struct ast_tagged_union_type tagged;
 		struct ast_tuple_type tuple;
 		struct {
-			struct identifier alias;
+			struct ident *alias;
 			union {
 				struct ast_enum_type _enum;
 				bool unwrap;
@@ -130,14 +130,14 @@ struct ast_expression_list {
 struct ast_expression_access {
 	enum access_type type;
 	union {
-		struct identifier ident;
+		struct ident *ident;
 		struct {
 			struct ast_expression *array;
 			struct ast_expression *index;
 		};
 		struct {
 			struct ast_expression *_struct;
-			char *field;
+			const char *field;
 		};
 		struct {
 			struct ast_expression *tuple;
@@ -176,12 +176,12 @@ struct ast_expression_binarithm {
 };
 
 struct ast_binding_unpack {
-	char *name;
+	struct ident *name;
 	struct ast_binding_unpack *next;
 };
 
 struct ast_expression_binding {
-	char *name;
+	struct ident *name;
 	struct ast_binding_unpack *unpack;
 	struct ast_type *type;
 	bool is_static;
@@ -221,7 +221,7 @@ struct ast_expression_literal {
 };
 
 struct ast_expression_control {
-	char *label;
+	const char *label;
 	struct ast_expression *value; // Only set for yield
 };
 
@@ -236,7 +236,7 @@ struct ast_expression_delete {
 
 struct ast_expression_for {
 	enum for_kind kind;
-	char *label;
+	const char *label;
 	struct ast_expression *bindings;
 	struct ast_expression *cond;
 	struct ast_expression *afterthought;
@@ -253,20 +253,20 @@ struct ast_expression_if {
 };
 
 struct ast_expression_compound {
-	char *label;
+	const char *label;
 	struct location label_loc;
 	struct ast_expression_list list;
 };
 
 struct ast_match_case {
-	char *name; // May be null
+	struct ident *name; // May be null
 	struct ast_type *type;
 	struct ast_expression_list exprs;
 	struct ast_match_case *next;
 };
 
 struct ast_expression_match {
-	char *label;
+	const char *label;
 	struct ast_expression *value;
 	struct ast_match_case *cases;
 };
@@ -313,13 +313,13 @@ struct ast_switch_case {
 };
 
 struct ast_expression_switch {
-	char *label;
+	const char *label;
 	struct ast_expression *value;
 	struct ast_switch_case *cases;
 };
 
 struct ast_field_value {
-	char *name;
+	const char *name;
 	struct ast_type *type;
 	struct ast_expression *initializer;
 	struct ast_field_value *next;
@@ -327,7 +327,7 @@ struct ast_field_value {
 
 struct ast_expression_struct {
 	bool autofill;
-	struct identifier type;
+	struct ident *type;
 	struct ast_field_value *fields;
 };
 
@@ -381,16 +381,16 @@ struct ast_expression {
 };
 
 struct ast_global_decl {
-	char *symbol;
+	const char *symbol;
 	bool threadlocal;
-	struct identifier ident;
+	struct ident *ident;
 	struct ast_type *type;
 	struct ast_expression *init;
 	struct ast_global_decl *next;
 };
 
 struct ast_type_decl {
-	struct identifier ident;
+	struct ident *ident;
 	struct ast_type *type;
 	struct ast_type_decl *next;
 };
@@ -402,8 +402,8 @@ enum func_decl_flags {
 };
 
 struct ast_function_decl {
-	char *symbol;
-	struct identifier ident;
+	const char *symbol;
+	struct ident *ident;
 	struct ast_function_type prototype;
 	struct ast_expression *body;
 	enum func_decl_flags flags;
@@ -442,7 +442,7 @@ struct ast_subunit {
 };
 
 struct ast_unit {
-	struct identifier *ns;
+	struct ident *ns;
 	struct ast_subunit subunits;
 };
 
