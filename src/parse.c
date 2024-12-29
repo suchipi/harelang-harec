@@ -2478,21 +2478,26 @@ parse_statement(struct lexer *lexer)
 static char *
 parse_attr_symbol(struct lexer *lexer)
 {
-	struct token tok = {0};
 	want(lexer, T_LPAREN, NULL);
-	want(lexer, T_LITERAL, &tok);
-	synassert_msg(tok.storage == STORAGE_STRING,
-		"expected string literal", &tok);
-	synassert_msg(tok.string.len > 0, "invalid symbol", &tok);
-	for (size_t i = 0; i < tok.string.len; i++) {
-		uint32_t c = tok.string.value[i];
-		synassert_msg(c <= 0x7F && (isalnum(c) || c == '_' || c == '$'
-			|| c == '.'), "invalid symbol", &tok);
-		synassert_msg(i != 0 || (!isdigit(c) && c != '$'),
-			"invalid symbol", &tok);
-	}
+	struct ast_expression *exp = parse_literal(lexer);
 	want(lexer, T_RPAREN, NULL);
-	return xstrdup(tok.string.value);
+
+	if (exp->type != EXPR_LITERAL || exp->literal.storage != STORAGE_STRING
+			|| exp->literal.string.len == 0) {
+		error(exp->loc, "expected nonempty string literal");
+	}
+	char *s = exp->literal.string.value;
+	if ((uint32_t)s[0] > 0x7F || isdigit(s[0]) || s[0] == '$') {
+		error(exp->loc, "invalid symbol %s", s);
+	}
+	for (size_t i = 0; i < exp->literal.string.len; i++) {
+		uint32_t c = s[i];
+		if (c > 0x7F || !(isalnum(c) || c == '_' || c == '$' || c == '.')) {
+			error(exp->loc, "invalid symbol %s", s);
+		}
+	}
+	free(exp);
+	return s;
 }
 
 static void

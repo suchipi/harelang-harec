@@ -533,8 +533,10 @@ fn complete_graph() void = {
 	static assert(size(t_0) == 4097 * size(*opaque));
 };
 
-export let @symbol("s_x") s_d: int = 0;
+export let @symbol("s_x") s_d: int = -42;
 export let @symbol("s_y") s_c: int;
+
+export let @symbol("s" `_` "x") s_e: int;
 
 fn imported() void = {
 	// Decl. with symbol accessible by identifier
@@ -557,6 +559,10 @@ fn imported() void = {
 	assert(testmod::s_b == 1 && s_c == 1);
 	s_c = 2;
 	assert(testmod::s_b == 2 && s_c == 2);
+
+	// multipart strings are handled
+	assert(s_d == -42 && s_e == -42);
+
 };
 
 export fn main() void = {
