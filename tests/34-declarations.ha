@@ -447,10 +447,28 @@ fn reject() void = {
 		"export fn main() void = { if (true) let a = 4; };",
 
 		// invalid symbol
+		`@symbol() fn f() void;`,
+		`@symbol(5) fn f() void;`,
+		`@symbol('a') fn f() void;`,
 		`@symbol("") fn f() void;`,
+		`@symbol(" ") fn f() void;`,
+		`@symbol("a\0b") fn f() void;`,
+		`@symbol("a\nb") fn f() void;`,
+		"@symbol(``) fn f() void;",
+		`@symbol("aが") fn f() void;`,
+		`@symbol("a" "が") fn f() void;`,
+		`@symbol("が") fn f() void;`,
+		`@symbol("が" "a") fn f() void;`,
 		`@symbol("#!@%") fn f() void;`,
+		"@symbol(`#!@%`) fn f() void;",
 		`@symbol("") let x: int;`,
 		`@symbol("#!@%") let x: int;`,
+		`@symbol("asdf#") let x: int;`,
+		`@symbol("asdf" "#") let x: int;`,
+		`@symbol("$asdf") let x: int;`,
+		`@symbol("2asdf") let x: int;`,
+		`@symbol("$" "asdf") let x: int;`,
+		`@symbol("2" "asdf") let x: int;`,
 	];
 
 	for (let i = 0z; i < len(failures); i += 1) {
@@ -537,6 +555,18 @@ export let @symbol("s_x") s_d: int = -42;
 export let @symbol("s_y") s_c: int;
 
 export let @symbol("s" `_` "x") s_e: int;
+
+export let @symbol("x" "2") x2: int;
+export let @symbol("x" "$") x_: int;
+export let @symbol("x" "2x") x2x: int;
+export let @symbol("x" "$x") x_x: int;
+
+export let @symbol("y" "" "2") y2: int;
+export let @symbol("y" `` `` "$") y_: int;
+export let @symbol(`` "y" "2y") y2y: int;
+export let @symbol("" "y" "$y") y_y: int;
+export let @symbol("z" "2z" "") z2z: int;
+export let @symbol("z" "$z" ``) z_z: int;
 
 fn imported() void = {
 	// Decl. with symbol accessible by identifier
