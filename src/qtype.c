@@ -144,13 +144,17 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	def->type.base = type;
 	def->type.name = def->name;
 
-	const struct type *final = type_dealias(NULL, type);
-	assert((final->storage == STORAGE_STRUCT && final->struct_union.packed)
-			|| type->size == SIZE_UNDEFINED
-			|| type->size == 0
-			|| type->size % type->align == 0);
-
 	struct qbe_field *field = &def->type.fields;
+	if (type->size == SIZE_UNDEFINED
+			|| type->size == 0
+			|| type->size % type->align != 0) {
+		/* Not straightforwardly compatible with the C ABI */
+		field->type = NULL;
+		field->count = type->size;
+		qbe_append_def(ctx->out, def);
+		return &def->type;
+	}
+
 	switch (type->storage) {
 	case STORAGE_ARRAY:
 		if (type->array.length == SIZE_UNDEFINED) {
@@ -177,11 +181,6 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 		def->type.stype = Q__UNION;
 		// fallthrough
 	case STORAGE_STRUCT:
-		if (!type->struct_union.c_compat) {
-			field->type = NULL;
-			field->count = type->size;
-			break;
-		}
 		for (struct struct_field *tfield = type->struct_union.fields;
 				tfield; tfield = tfield->next) {
 			if (tfield->type->size != 0) {
