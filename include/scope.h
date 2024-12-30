@@ -30,6 +30,8 @@ struct scope_object {
 		const struct type *type;
 		struct expression *value; // For O_CONST
 	};
+	 // Cannot be in union because type and idecl are needed at the same time
+	struct incomplete_decl *idecl;
 
 	struct scope_object *lnext; // Linked list
 	struct scope_object *mnext; // Hash map

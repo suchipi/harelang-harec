@@ -123,7 +123,7 @@ scope_insert(struct scope *scope, enum object_type otype,
 	struct ident *ident, struct ident *name, const struct type *type,
 	struct expression *value)
 {
-	assert(!type != !value);
+	assert(otype == O_SCAN || !type != !value);
 	struct scope_object *o = xcalloc(1, sizeof(struct scope_object));
 	scope_object_init(o, otype, ident, name, type, value);
 	scope_insert_from_object(scope, o);

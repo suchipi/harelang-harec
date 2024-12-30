@@ -36,21 +36,19 @@ complete_alias(struct context *ctx, struct type *type)
 		scope_lookup(ctx->scope, type->alias.name);
 	assert(obj != NULL);
 	assert(obj->otype == O_TYPE || obj->otype == O_SCAN);
-	struct incomplete_declaration *idecl =
-		(struct incomplete_declaration *)obj;
-	assert(idecl->type == IDECL_DECL);
+	assert(obj->idecl->type == IDECL_DECL);
 
-	if (idecl->dealias_in_progress) {
-		char *identstr = ident_unparse(idecl->obj.name);
-		error(ctx, idecl->decl.loc, NULL,
+	if (obj->idecl->dealias_in_progress) {
+		char *identstr = ident_unparse(obj->name);
+		error(ctx, obj->idecl->decl.loc, NULL,
 			"Circular dependency for '%s'", identstr);
 		free(identstr);
 		type->alias.type = &builtin_type_error;
 		return;
 	}
-	idecl->dealias_in_progress = true;
-	type->alias.type = type_store_lookup_atype(ctx, idecl->decl.type.type);
-	idecl->dealias_in_progress = false;
+	obj->idecl->dealias_in_progress = true;
+	type->alias.type = type_store_lookup_atype(ctx, obj->idecl->decl.type.type);
+	obj->idecl->dealias_in_progress = false;
 }
 
 const struct type *

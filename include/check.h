@@ -106,8 +106,7 @@ struct incomplete_enum_field {
 
 // Keeps track of context required to resolve a declaration or an enum field
 // Extends the scope_object struct so it can be inserted into a scope
-struct incomplete_declaration {
-	struct scope_object obj;
+struct incomplete_decl {
 	struct scope *imports; // the scope of this declaration's subunit
 	enum idecl_type type;
 	bool in_progress;
@@ -128,14 +127,11 @@ char *gen_typename(const struct type *type);
 struct expression *lower_implicit_cast(struct context *ctx,
 		const struct type *to, struct expression *expr);
 
-typedef void (*resolvefn)(struct context *,
-		struct incomplete_declaration *idecl);
+typedef void (*resolvefn)(struct context *, struct scope_object *obj);
 
-void resolve_dimensions(struct context *ctx,
-		struct incomplete_declaration *idecl);
+void resolve_dimensions(struct context *ctx, struct scope_object *obj);
 
-void resolve_type(struct context *ctx,
-		struct incomplete_declaration *idecl);
+void resolve_type(struct context *ctx, struct scope_object *obj);
 
 void wrap_resolver(struct context *ctx,
 	struct scope_object *obj, resolvefn resolver);

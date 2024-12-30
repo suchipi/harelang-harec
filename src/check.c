@@ -169,8 +169,7 @@ lower_implicit_cast(struct context *ctx,
 	return cast;
 }
 
-static void resolve_decl(struct context *ctx,
-	struct incomplete_declaration *idecl);
+static void resolve_decl(struct context *ctx, struct scope_object *obj);
 
 static const struct type *
 check_autodereference(struct context *ctx, struct location loc,
@@ -1036,8 +1035,7 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 	assert(0);
 }
 
-static void resolve_enum_field(struct context *ctx,
-	struct incomplete_declaration *idel);
+static void resolve_enum_field(struct context *ctx, struct scope_object *obj);
 
 static bool
 type_has_default(struct context *ctx, const struct type *type)
@@ -3841,26 +3839,22 @@ end:
 	append_decl(ctx, decl);
 }
 
-static struct incomplete_declaration *
-incomplete_declaration_create(struct context *ctx, struct location loc,
+static struct scope_object *
+incomplete_decl_create(struct context *ctx, struct location loc,
 		struct scope *scope, struct ident *ident, struct ident *name)
 {
 	struct scope *subunit = ctx->unit->parent;
 	ctx->unit->parent = NULL;
-	struct incomplete_declaration *idecl =
-		(struct incomplete_declaration *)scope_lookup(scope, name);
+	struct scope_object *obj = scope_lookup(scope, name);
 	ctx->unit->parent = subunit;
 
-	if (idecl) {
+	if (obj) {
 		error_norec(ctx, loc, "Duplicate global ident '%s'",
 			ident_unparse(ident));
 	}
-	idecl =  xcalloc(1, sizeof(struct incomplete_declaration));
-
-	scope_object_init((struct scope_object *)idecl, O_SCAN,
-			ident, name, NULL, NULL);
-	scope_insert_from_object(scope, (struct scope_object *)idecl);
-	return idecl;
+	obj = scope_insert(scope, O_SCAN, ident, name, NULL, NULL);
+	obj->idecl = xcalloc(1, sizeof(struct incomplete_decl));
+	return obj;
 }
 
 static void
@@ -3872,8 +3866,7 @@ scan_enum_field(struct context *ctx, struct scope *imports,
 	// This way, objects in enum_scope will have lnext pointing to
 	// the previous element, which is important for implicit enum values.
 	if (f->next) {
-		scan_enum_field(ctx, imports, enum_scope,
-			etype, f->next);
+		scan_enum_field(ctx, imports, enum_scope, etype, f->next);
 	}
 	assert(etype->storage == STORAGE_ENUM);
 	struct incomplete_enum_field *field =
@@ -3884,12 +3877,12 @@ scan_enum_field(struct context *ctx, struct scope *imports,
 	};
 
 	struct ident *name = intern_ident(ctx->itbl, f->name->name, etype->alias.name);
-	struct incomplete_declaration *fld = incomplete_declaration_create(
+	struct scope_object *obj = incomplete_decl_create(
 			ctx, f->loc, enum_scope, name, f->name);
-	fld->type = IDECL_ENUM_FLD;
-	fld->imports = imports;
-	fld->obj.type = etype,
-	fld->field = field;
+	obj->idecl->type = IDECL_ENUM_FLD;
+	obj->idecl->imports = imports;
+	obj->type = etype,
+	obj->idecl->field = field;
 }
 
 static void
@@ -3946,18 +3939,17 @@ scan_types(struct context *ctx, struct scope *imp, const struct ast_decl *decl)
 	for (const struct ast_type_decl *t = &decl->type; t; t = t->next) {
 		struct ident *with_ns = mkident(ctx,  t->ident, NULL);
 		check_hosted_main(ctx, decl->loc, NULL, with_ns, NULL);
-		struct incomplete_declaration *idecl =
-			incomplete_declaration_create(ctx, decl->loc, ctx->scope,
-					with_ns, t->ident);
-		idecl->decl = (struct ast_decl){
+		struct scope_object *obj = incomplete_decl_create(ctx,
+				decl->loc, ctx->scope, with_ns, t->ident);
+		obj->idecl->decl = (struct ast_decl){
 			.decl_type = ADECL_TYPE,
 			.loc = decl->loc,
 			.type = *t,
 			.exported = decl->exported,
 		};
-		idecl->imports = imp;
+		obj->idecl->imports = imp;
 		if (t->type->storage == STORAGE_ENUM) {
-			bool exported = idecl->decl.exported;
+			bool exported = obj->idecl->decl.exported;
 			const struct type *type = type_store_lookup_enum(
 					ctx, t->type, exported);
 			if (type->storage == STORAGE_ERROR) {
@@ -3967,17 +3959,17 @@ scan_types(struct context *ctx, struct scope *imp, const struct ast_decl *decl)
 			scan_enum_field(ctx, imp,
 				type->_enum.values, type, t->type->_enum.values);
 			type->_enum.values->parent = ctx->defines;
-			idecl->obj.otype = O_TYPE;
-			idecl->obj.type = type;
+			obj->otype = O_TYPE;
+			obj->type = type;
 			append_decl(ctx, &(struct declaration){
 				.decl_type = DECL_TYPE,
 				.file = decl->loc.file,
-				.ident = idecl->obj.ident,
+				.ident = obj->ident,
 				.exported = exported,
 				.type = type,
 			});
 		} else {
-			idecl->type = IDECL_DECL;
+			obj->idecl->type = IDECL_DECL;
 		}
 	}
 }
@@ -4068,9 +4060,9 @@ check_exported_type(struct context *ctx,
 }
 
 static void
-resolve_const(struct context *ctx, struct incomplete_declaration *idecl)
+resolve_const(struct context *ctx, struct scope_object *obj)
 {
-	const struct ast_global_decl *decl = &idecl->decl.constant;
+	const struct ast_global_decl *decl = &obj->idecl->decl.constant;
 
 	assert(!decl->symbol); // Invariant
 
@@ -4078,19 +4070,19 @@ resolve_const(struct context *ctx, struct incomplete_declaration *idecl)
 	if (decl->type) {
 		type = type_store_lookup_atype(ctx, decl->type);
 	}
-	struct expression *init = xcalloc(1, sizeof(struct expression)),
-		*value = xcalloc(1, sizeof(struct expression));
+	struct expression *init = xcalloc(1, sizeof(struct expression));
+	obj->value = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, decl->init, init, type);
 	if (!decl->type) {
 		type = init->result;
 		if (type->storage == STORAGE_NULL) {
-			error(ctx, decl->init->loc, value,
+			error(ctx, decl->init->loc, obj->value,
 				"Null is not a valid type for a constant");
 			type = &builtin_type_error;
 			goto end;
 		}
 	}
-	if (idecl->decl.exported) {
+	if (obj->idecl->decl.exported) {
 		struct location loc =
 			decl->type ? decl->type->loc : decl->init->loc;
 		check_exported_type(ctx, loc, type);
@@ -4098,7 +4090,7 @@ resolve_const(struct context *ctx, struct incomplete_declaration *idecl)
 	if (!type_is_assignable(ctx, type, init->result)) {
 		char *typename1 = gen_typename(init->result);
 		char *typename2 = gen_typename(type);
-		error(ctx, decl->init->loc, value,
+		error(ctx, decl->init->loc, obj->value,
 			"Initializer type %s is not assignable to constant type %s",
 			typename1, typename2);
 		free(typename1);
@@ -4115,92 +4107,90 @@ resolve_const(struct context *ctx, struct incomplete_declaration *idecl)
 		}
 	}
 
-	if (!eval_expr(ctx, init, value)) {
-		error(ctx, decl->init->loc, value,
+	if (!eval_expr(ctx, init, obj->value)) {
+		error(ctx, decl->init->loc, obj->value,
 			"Unable to evaluate initializer at compile time");
 		type = &builtin_type_error;
 		goto end;
 	}
 end:
-	idecl->obj.otype = O_CONST;
-	idecl->obj.value = value;
+	obj->otype = O_CONST;
 
 	if (!ctx->defines || ctx->errors) {
 		return;
 	}
-	struct scope_object *shadow_obj =
-		scope_lookup(ctx->defines, idecl->obj.ident);
-	if (shadow_obj && &idecl->obj != shadow_obj) {
+	struct scope_object *shadow_obj = scope_lookup(ctx->defines, obj->ident);
+	if (shadow_obj && obj != shadow_obj) {
 		// Shadowed by define
-		if (type_is_flexible(value->result)
+		if (type_is_flexible(obj->value->result)
 				|| type_is_flexible(shadow_obj->value->result)) {
 			const struct type *promoted = promote_flexible(ctx,
-				value->result, shadow_obj->value->result);
+				obj->value->result, shadow_obj->value->result);
 			if (promoted == NULL) {
 				const char *msg;
 				char *typename = NULL;
-				if (!type_is_flexible(value->result)) {
+				if (!type_is_flexible(obj->value->result)) {
 					msg = "Constant of type %s is shadowed by define of incompatible flexible type";
-					typename = gen_typename(value->result);
+					typename = gen_typename(obj->value->result);
 				} else if (!type_is_flexible(shadow_obj->value->result)) {
 					msg = "Constant of flexible type is shadowed by define of incompatible type %s";
 					typename = gen_typename(shadow_obj->value->result);
 				} else {
 					msg = "Constant of flexible type is shadowed by define of incompatible flexible type";
 				}
-				error(ctx, idecl->decl.loc, NULL, msg, typename);
+				error(ctx, obj->idecl->decl.loc, NULL, msg, typename);
 				free(typename);
 			} else {
 				shadow_obj->value = lower_implicit_cast(ctx,
 					promoted, shadow_obj->value);
 			}
-		} else if (value->result != shadow_obj->value->result) {
-			char *typename = gen_typename(value->result);
+		} else if (obj->value->result != shadow_obj->value->result) {
+			char *typename = gen_typename(obj->value->result);
 			char *shadow_typename = gen_typename(shadow_obj->value->result);
-			error(ctx, idecl->decl.loc, NULL,
+			error(ctx, obj->idecl->decl.loc, NULL,
 					"Constant of type %s is shadowed by define of incompatible type %s",
 					typename, shadow_typename);
 			free(typename);
 			free(shadow_typename);
 		}
-		idecl->obj.value = shadow_obj->value;
+		obj->value = shadow_obj->value;
 	}
 	append_decl(ctx, &(struct declaration){
 		.decl_type = DECL_CONST,
-		.file = idecl->decl.loc.file,
-		.ident = idecl->obj.ident,
-		.exported = idecl->decl.exported,
+		.file = obj->idecl->decl.loc.file,
+		.ident = obj->ident,
+		.exported = obj->idecl->decl.exported,
 		.constant = {
 			.type = type,
-			.value = value,
+			.value = obj->value,
 		}
 	});
 }
 
 void
-resolve_function(struct context *ctx, struct incomplete_declaration *idecl)
+resolve_function(struct context *ctx, struct scope_object *obj)
 {
-	const struct ast_function_decl *decl = &idecl->decl.function;
+	const struct ast_function_decl *decl = &obj->idecl->decl.function;
 
 	const struct ast_type fn_atype = {
-		.loc = idecl->decl.loc,
+		.loc = obj->idecl->decl.loc,
 		.storage = STORAGE_FUNCTION,
 		.flags = 0,
 		.func = decl->prototype,
 	};
 	const struct type *fntype = type_store_lookup_atype(ctx, &fn_atype);
-	if (idecl->decl.exported) {
-		check_exported_type(ctx, idecl->decl.loc, fntype);
+	if (obj->idecl->decl.exported) {
+		check_exported_type(ctx, obj->idecl->decl.loc, fntype);
 	}
 
-	idecl->obj.otype = O_DECL;
-	idecl->obj.type = fntype;
+	obj->otype = O_DECL;
+	obj->type = fntype;
 }
 
 void
-resolve_global(struct context *ctx, struct incomplete_declaration *idecl)
+resolve_global(struct context *ctx, struct scope_object *obj)
 {
-	const struct ast_global_decl *decl = &idecl->decl.global;
+	const struct ast_global_decl *decl = &obj->idecl->decl.global;
 	const struct type *type = NULL;
 	bool context = false;
 	struct expression *init, *value = NULL;
@@ -4261,96 +4251,95 @@ resolve_global(struct context *ctx, struct incomplete_declaration *idecl)
 		}
 	}
 
-	if (idecl->decl.exported) {
+	if (obj->idecl->decl.exported) {
 		struct location loc =
 			decl->type ? decl->type->loc : decl->init->loc;
 		check_exported_type(ctx, loc, type);
 	}
 
 end:;
-	struct ident *name = mkident(ctx, idecl->obj.name, NULL);
-	idecl->obj.otype = O_DECL;
-	idecl->obj.type = type;
+	struct ident *name = mkident(ctx, obj->name, NULL);
+	obj->otype = O_DECL;
+	obj->type = type;
 	if (decl->threadlocal) {
-		idecl->obj.flags |= SO_THREADLOCAL;
+		obj->flags |= SO_THREADLOCAL;
 	}
 
 	append_decl(ctx, &(struct declaration){
 		.decl_type = DECL_GLOBAL,
-		.file = idecl->decl.loc.file,
+		.file = obj->idecl->decl.loc.file,
 		.ident = name,
-		.symbol = ident_to_sym(ctx->itbl, idecl->obj.ident),
+		.symbol = ident_to_sym(ctx->itbl, obj->ident),
 
-		.exported = idecl->decl.exported,
+		.exported = obj->idecl->decl.exported,
 		.global = {
 			.type = type,
 			.value = value,
-			.threadlocal = idecl->decl.global.threadlocal,
+			.threadlocal = obj->idecl->decl.global.threadlocal,
 		}
 	});
 }
 
 static void
-resolve_enum_field(struct context *ctx, struct incomplete_declaration *idecl)
+resolve_enum_field(struct context *ctx, struct scope_object *obj)
 {
-	assert(idecl->type == IDECL_ENUM_FLD);
+	assert(obj->idecl->type == IDECL_ENUM_FLD);
 
-	const struct type *type = idecl->obj.type;
+	const struct type *type = obj->type;
 
-	struct ident *localname = intern_name(ctx->itbl, idecl->obj.ident->name);
-	struct scope_object *new = scope_lookup(idecl->field->enum_scope,localname);
-	if (new != &idecl->obj) {
+	struct ident *localname = intern_name(ctx->itbl, obj->ident->name);
+	struct scope_object *new =
+		scope_lookup(obj->idecl->field->enum_scope, localname);
+	if (new != obj) {
 		wrap_resolver(ctx, new, resolve_enum_field);
 		assert(new->otype == O_CONST);
-		idecl->obj.otype = O_CONST;
-		idecl->obj.value = new->value;
+		obj->otype = O_CONST;
+		obj->value = new->value;
 		return;
 	}
 
-	ctx->scope = idecl->field->enum_scope;
-	struct expression *value = xcalloc(1, sizeof(struct expression));
-	value->result = type;
-	if (idecl->field->field->value) { // explicit value
+	ctx->scope = obj->idecl->field->enum_scope;
+	obj->value = xcalloc(1, sizeof(struct expression));
+	obj->value->result = type;
+	if (obj->idecl->field->field->value) { // explicit value
 		struct expression *initializer =
 			xcalloc(1, sizeof(struct expression));
-		check_expression(ctx, idecl->field->field->value,
+		check_expression(ctx, obj->idecl->field->field->value,
 				initializer, type->alias.type);
 
 		if (!type_is_assignable(ctx, type->alias.type, initializer->result)) {
 			char *inittypename = gen_typename(initializer->result);
 			char *builtintypename = gen_typename(type->alias.type);
-			error_norec(ctx, idecl->field->field->value->loc,
+			error_norec(ctx, obj->idecl->field->field->value->loc,
 				"Enum value type (%s) is not assignable from initializer type (%s) for value %s",
-				builtintypename, inittypename, idecl->obj.ident->name);
+				builtintypename, inittypename, obj->ident->name);
 		}
 
 		initializer = lower_implicit_cast(ctx, type, initializer);
-		if (!eval_expr(ctx, initializer, value)) {
-			error_norec(ctx, idecl->field->field->value->loc,
+		if (!eval_expr(ctx, initializer, obj->value)) {
+			error_norec(ctx, obj->idecl->field->field->value->loc,
 				"Unable to evaluate constant initializer at compile time");
 		}
 	} else { // implicit value
-		struct scope_object *obj = idecl->obj.lnext;
+		struct scope_object *next = obj->lnext;
 		// find previous enum value
-		wrap_resolver(ctx, obj, resolve_enum_field);
-		value->type = EXPR_LITERAL;
+		wrap_resolver(ctx, next, resolve_enum_field);
+		obj->value->type = EXPR_LITERAL;
 		if (type_is_signed(ctx, type_dealias(ctx, type))) {
-			if (obj == NULL) {
-				value->literal.ival = 0;
+			if (next == NULL) {
+				obj->value->literal.ival = 0;
 			} else {
-				value->literal.ival = obj->value->literal.ival + 1;
+				obj->value->literal.ival = next->value->literal.ival + 1;
 			}
 		} else {
-			if (obj == NULL) {
-				value->literal.uval = 0;
+			if (next == NULL) {
+				obj->value->literal.uval = 0;
 			} else {
-				value->literal.uval = obj->value->literal.uval + 1;
+				obj->value->literal.uval = next->value->literal.uval + 1;
 			}
 		}
 	}
-
-	idecl->obj.otype = O_CONST;
-	idecl->obj.value = value;
+	obj->otype = O_CONST;
 }
 
 const struct type *
@@ -4360,29 +4349,26 @@ lookup_enum_type(struct context *ctx, const struct scope_object *obj)
 
 	switch (obj->otype) {
 	case O_SCAN: {
-		struct incomplete_declaration *idecl =
-			(struct incomplete_declaration *)obj;
-
-		if (idecl->in_progress) {
+		if (obj->idecl->in_progress) {
 			// Type alias cycle will be handled in check
 			return NULL;
 		}
 
-		if (idecl->type != IDECL_DECL ||
-				idecl->decl.decl_type != ADECL_TYPE) {
+		if (obj->idecl->type != IDECL_DECL ||
+				obj->idecl->decl.decl_type != ADECL_TYPE) {
 			return NULL;
 		}
 
-		if (idecl->decl.type.type->storage == STORAGE_ENUM) {
+		if (obj->idecl->decl.type.type->storage == STORAGE_ENUM) {
 			assert(false);
-		} else if (idecl->decl.type.type->storage == STORAGE_ALIAS) {
-			ctx->scope->parent = idecl->imports;
+		} else if (obj->idecl->decl.type.type->storage == STORAGE_ALIAS) {
+			ctx->scope->parent = obj->idecl->imports;
 			const struct scope_object *new = scope_lookup(ctx->scope,
-					idecl->decl.type.type->alias);
+					obj->idecl->decl.type.type->alias);
 			if (new) {
-				idecl->in_progress = true;
+				obj->idecl->in_progress = true;
 				enum_type = lookup_enum_type(ctx, new);
-				idecl->in_progress = false;
+				obj->idecl->in_progress = false;
 			}
 		}
 		break;
@@ -4430,87 +4416,84 @@ scan_enum_field_aliases(struct context *ctx, struct scope_object *obj)
 
 		struct incomplete_enum_field *field =
 			xcalloc(1, sizeof(struct incomplete_enum_field));
-		struct incomplete_declaration *idecl =
-			(struct incomplete_declaration *)val;
 		*field = (struct incomplete_enum_field){
 			.field = afield,
-			.enum_scope = idecl->field->enum_scope,
+			.enum_scope = val->idecl->field->enum_scope,
 		};
 
 		struct ident *name =
 			intern_ident(ctx->itbl, val->name->name, obj->name);
-		idecl = incomplete_declaration_create(ctx, (struct location){0},
-			ctx->scope, name, name);
-		idecl->type = IDECL_ENUM_FLD;
-		idecl->obj.type = obj->type;
-		idecl->field = field;
+		struct scope_object *new = incomplete_decl_create(ctx,
+				(struct location){0}, ctx->scope, name, name);
+		new->idecl->type = IDECL_ENUM_FLD;
+		new->type = obj->type;
+		new->idecl->field = field;
 	}
 }
 
 void
-resolve_dimensions(struct context *ctx, struct incomplete_declaration *idecl)
+resolve_dimensions(struct context *ctx, struct scope_object *obj)
 {
-	if (idecl->type != IDECL_DECL || idecl->decl.decl_type != ADECL_TYPE) {
+	if (obj->idecl->type != IDECL_DECL || obj->idecl->decl.decl_type != ADECL_TYPE) {
 		struct location loc;
-		if (idecl->type == IDECL_ENUM_FLD) {
-			loc = idecl->field->field->loc;
+		if (obj->idecl->type == IDECL_ENUM_FLD) {
+			loc = obj->idecl->field->field->loc;
 		} else {
-			loc = idecl->decl.loc;
+			loc = obj->idecl->decl.loc;
 		}
-		char *ident = ident_unparse(idecl->obj.name);
+		char *ident = ident_unparse(obj->name);
 		error(ctx, loc, NULL, "'%s' is not a type", ident);
 		free(ident);
-		idecl->obj.type = &builtin_type_error;
+		obj->type = &builtin_type_error;
 		return;
 	}
 	struct dimensions dim = type_store_lookup_dimensions(ctx,
-			idecl->decl.type.type);
-	idecl->obj.type = xcalloc(1, sizeof(struct type));
-	*(struct type *)idecl->obj.type = (struct type){
+			obj->idecl->decl.type.type);
+	obj->type = xcalloc(1, sizeof(struct type));
+	*(struct type *)obj->type = (struct type){
 		.size = dim.size,
 		.align = dim.align,
 	};
 }
 
 void
-resolve_type(struct context *ctx, struct incomplete_declaration *idecl)
+resolve_type(struct context *ctx, struct scope_object *obj)
 {
 	struct location loc;
-	if (idecl->type == IDECL_ENUM_FLD) {
-		loc = idecl->field->field->loc;
+	if (obj->idecl->type == IDECL_ENUM_FLD) {
+		loc = obj->idecl->field->field->loc;
 	} else {
-		loc = idecl->decl.loc;
+		loc = obj->idecl->decl.loc;
 	}
 
-	if (idecl->type != IDECL_DECL || idecl->decl.decl_type != ADECL_TYPE) {
+	if (obj->idecl->type != IDECL_DECL || obj->idecl->decl.decl_type != ADECL_TYPE) {
 		error_norec(ctx, loc, "'%s' is not a type",
-				ident_unparse(idecl->obj.name));
+				ident_unparse(obj->name));
 	}
 
 	// compute type dimensions
 	struct errors **cur_err = ctx->next;
 	struct dimensions dim = type_store_lookup_dimensions(
-			ctx, idecl->decl.type.type);
-	idecl->in_progress = false;
+			ctx, obj->idecl->decl.type.type);
+	obj->idecl->in_progress = false;
 
 	// compute type representation and store it
-	struct type *alias = (struct type *)type_store_lookup_alias(ctx,
-			idecl->obj.ident, idecl->obj.name, NULL,
-			idecl->decl.type.type->flags, idecl->decl.exported);
-	idecl->obj.otype = O_TYPE;
-	idecl->obj.type = alias;
+	struct type *alias = (struct type *)type_store_lookup_alias(ctx, obj->ident,
+			obj->name, NULL, obj->idecl->decl.type.type->flags,
+			obj->idecl->decl.exported);
+	obj->otype = O_TYPE;
+	obj->type = alias;
 	if (ctx->next == cur_err) {
 		alias->size = dim.size;
 		alias->align = dim.align;
-		alias->flags = idecl->decl.type.type->flags;
 		alias->alias.type = type_store_lookup_atype(
-			ctx, idecl->decl.type.type);
+			ctx, obj->idecl->decl.type.type);
 	} else {
 		alias->alias.type = &builtin_type_error;
 	}
 	assert(alias->alias.type != NULL);
-	if (idecl->decl.exported) {
-		check_exported_type(ctx, idecl->decl.type.type->loc,
+	if (obj->idecl->decl.exported) {
+		check_exported_type(ctx, obj->idecl->decl.type.type->loc,
 			alias->alias.type);
 	}
 	if (alias->alias.type->storage == STORAGE_NEVER) {
@@ -4525,37 +4508,36 @@ resolve_type(struct context *ctx, struct incomplete_declaration *idecl)
 
 	append_decl(ctx, &(struct declaration){
 		.decl_type = DECL_TYPE,
-		.file = idecl->decl.loc.file,
-		.ident = idecl->obj.ident,
-		.exported = idecl->decl.exported,
+		.file = obj->idecl->decl.loc.file,
+		.ident = obj->ident,
+		.exported = obj->idecl->decl.exported,
 		.type = alias,
 	});
 }
 
-static struct incomplete_declaration *
+static struct scope_object *
 scan_const(struct context *ctx, struct scope *imports, bool exported,
 		struct location loc, const struct ast_global_decl *decl)
 {
 	struct ident *with_ns = mkident(ctx, decl->ident, NULL);
 	check_hosted_main(ctx, loc, NULL, with_ns, NULL);
-	struct incomplete_declaration *idecl =
-		incomplete_declaration_create(ctx, loc,
+	struct scope_object *obj = incomplete_decl_create(ctx, loc,
 				ctx->scope, with_ns, decl->ident);
-	idecl->type = IDECL_DECL;
-	idecl->decl = (struct ast_decl){
+	obj->idecl->type = IDECL_DECL;
+	obj->idecl->decl = (struct ast_decl){
 		.decl_type = ADECL_CONST,
 		.loc = loc,
 		.constant = *decl,
 		.exported = exported,
 	};
-	idecl->imports = imports;
-	return idecl;
+	obj->idecl->imports = imports;
+	return obj;
 }
 
 static void
 scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *decl)
 {
-	struct incomplete_declaration *idecl = {0};
+	struct scope_object *obj;
 	struct ident *ident;
 	switch (decl->decl_type) {
 	case ADECL_CONST:
@@ -4569,16 +4551,16 @@ scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *dec
 				g; g = g->next) {
 			ident = mkident(ctx, g->ident, g->symbol);
 			check_hosted_main(ctx, decl->loc, NULL, ident, g->symbol);
-			idecl = incomplete_declaration_create(ctx, decl->loc,
+			obj = incomplete_decl_create(ctx, decl->loc,
 				ctx->scope, ident, g->ident);
-			idecl->type = IDECL_DECL;
-			idecl->decl = (struct ast_decl){
+			obj->idecl->type = IDECL_DECL;
+			obj->idecl->decl = (struct ast_decl){
 				.decl_type = ADECL_GLOBAL,
 				.loc = decl->loc,
 				.global = *g,
 				.exported = decl->exported,
 			};
-			idecl->imports = imports;
+			obj->idecl->imports = imports;
 		}
 		break;
 	case ADECL_FUNC:;
@@ -4599,63 +4581,63 @@ scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *dec
 			ident = mkident(ctx, func->ident, func->symbol);
 			name = func->ident;
 		}
-		idecl = incomplete_declaration_create(ctx, decl->loc,
+		obj = incomplete_decl_create(ctx, decl->loc,
 			ctx->scope, ident, name);
 		check_hosted_main(ctx, decl->loc, decl, ident, func->symbol);
-		idecl->type = IDECL_DECL;
-		idecl->decl = (struct ast_decl){
+		obj->idecl->type = IDECL_DECL;
+		obj->idecl->decl = (struct ast_decl){
 			.decl_type = ADECL_FUNC,
 			.loc = decl->loc,
 			.function = *func,
 			.exported = decl->exported,
 		};
-		idecl->imports = imports;
+		obj->idecl->imports = imports;
 		break;
 	case ADECL_TYPE:
 		scan_types(ctx, imports, decl);
 		break;
 	case ADECL_ASSERT:;
 		struct ident *id = intern_generated(ctx, "static_assert.%d");
-		idecl = incomplete_declaration_create(ctx, decl->loc, ctx->scope, id, id);
-		idecl->type = IDECL_DECL;
-		idecl->decl = (struct ast_decl){
+		obj = incomplete_decl_create(ctx, decl->loc, ctx->scope, id, id);
+		obj->idecl->type = IDECL_DECL;
+		obj->idecl->decl = (struct ast_decl){
 			.decl_type = ADECL_ASSERT,
 			.loc = decl->loc,
 			.assert = decl->assert,
 			.exported = decl->exported,
 		};
-		idecl->imports = imports;
+		obj->idecl->imports = imports;
 		break;
 	}
 }
 
 static void
-resolve_decl(struct context *ctx, struct incomplete_declaration *idecl)
+resolve_decl(struct context *ctx, struct scope_object *obj)
 {
-	switch (idecl->type) {
+	switch (obj->idecl->type) {
 	case IDECL_ENUM_FLD:
-		resolve_enum_field(ctx, idecl);
+		resolve_enum_field(ctx, obj);
 		return;
 	case IDECL_DECL:
 		break;
 	}
 
-	switch (idecl->decl.decl_type) {
+	switch (obj->idecl->decl.decl_type) {
 	case ADECL_CONST:
-		resolve_const(ctx, idecl);
+		resolve_const(ctx, obj);
 		return;
 	case ADECL_GLOBAL:
-		resolve_global(ctx, idecl);
+		resolve_global(ctx, obj);
 		return;
 	case ADECL_FUNC:
-		resolve_function(ctx, idecl);
+		resolve_function(ctx, obj);
 		return;
 	case ADECL_TYPE:
-		resolve_type(ctx, idecl);
+		resolve_type(ctx, obj);
 		return;
 	case ADECL_ASSERT:;
 		struct expression expr = {0};
-		check_assert(ctx, idecl->decl.assert, idecl->decl.loc, &expr);
+		check_assert(ctx, obj->idecl->decl.assert, obj->idecl->decl.loc, &expr);
 		return;
 	}
 	abort();
@@ -4678,28 +4660,26 @@ wrap_resolver(struct context *ctx, struct scope_object *obj, resolvefn resolver)
 	struct ast_types *unresolved = ctx->unresolved;
 	ctx->unresolved = NULL;
 
-	struct incomplete_declaration *idecl = (struct incomplete_declaration *)obj;
-
 	// load this declaration's subunit context
 	ctx->scope = ctx->defines;
-	ctx->unit->parent = idecl->imports;
+	ctx->unit->parent = obj->idecl->imports;
 
 	// resolving a declaration that is already in progress -> cycle
-	if (idecl->in_progress) {
+	if (obj->idecl->in_progress) {
 		struct location loc;
-		if (idecl->type == IDECL_ENUM_FLD) {
-			loc = idecl->field->field->loc;
+		if (obj->idecl->type == IDECL_ENUM_FLD) {
+			loc = obj->idecl->field->field->loc;
 		} else {
-			loc = idecl->decl.loc;
+			loc = obj->idecl->decl.loc;
 		}
 		error_norec(ctx, loc, "Circular dependency for '%s'",
-			ident_unparse(idecl->obj.name));
+			ident_unparse(obj->name));
 	}
-	idecl->in_progress = true;
+	obj->idecl->in_progress = true;
 
-	resolver(ctx, idecl);
+	resolver(ctx, obj);
 
-	idecl->in_progress = false;
+	obj->idecl->in_progress = false;
 	resolve_unresolved(ctx);
 	// load stored context
 	ctx->unresolved = unresolved;
@@ -4848,9 +4828,9 @@ check_internal(type_store *ts,
 	ctx.scope = NULL;
 	ctx.unit = scope_push(&ctx.scope, SCOPE_DEFINES);
 	for (const struct ast_global_decl *def = defines; def; def = def->next) {
-		struct incomplete_declaration *idecl =
+		struct scope_object *obj =
 			scan_const(&ctx, NULL, false , defineloc, def);
-		resolve_const(&ctx, idecl);
+		resolve_const(&ctx, obj);
 	}
 	ctx.defines = ctx.scope;
 	ctx.scope = NULL;
@@ -4918,10 +4898,8 @@ check_internal(type_store *ts,
 			continue;
 		}
 		if (shadowed_obj->otype == O_SCAN) {
-			const struct incomplete_declaration *idecl =
-				(struct incomplete_declaration *)shadowed_obj;
-			if (idecl->type == IDECL_DECL &&
-					idecl->decl.decl_type == ADECL_CONST) {
+			if (shadowed_obj->idecl->type == IDECL_DECL &&
+					shadowed_obj->idecl->decl.decl_type == ADECL_CONST) {
 				continue;
 			}
 		}
@@ -4933,11 +4911,9 @@ check_internal(type_store *ts,
 			obj; obj = obj->lnext) {
 		wrap_resolver(&ctx, obj, resolve_decl);
 		// populate the expression graph
-		struct incomplete_declaration *idecl =
-			(struct incomplete_declaration *)obj;
-		if (idecl->type == IDECL_DECL && idecl->decl.decl_type == ADECL_FUNC) {
-			ctx.unit->parent = idecl->imports;
-			check_function(&ctx, &idecl->obj, &idecl->decl);
+		if (obj->idecl->type == IDECL_DECL && obj->idecl->decl.decl_type == ADECL_FUNC) {
+			ctx.unit->parent = obj->idecl->imports;
+			check_function(&ctx, obj, &obj->idecl->decl);
 		}
 	}
 

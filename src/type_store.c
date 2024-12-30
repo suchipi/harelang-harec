@@ -445,10 +445,8 @@ tagged_or_atagged_member(struct context *ctx,
 				return;
 			}
 		}
-		struct incomplete_declaration *idecl =
-			(struct incomplete_declaration *)obj;
-		if (idecl->type != IDECL_DECL
-				|| idecl->decl.decl_type != ADECL_TYPE) {
+		if (obj->idecl->type != IDECL_DECL
+				|| obj->idecl->decl.decl_type != ADECL_TYPE) {
 			char *ident = ident_unparse(obj->ident);
 			error(ctx, _atype->loc, NULL,
 				"Object '%s' is not a type", ident);
@@ -456,7 +454,7 @@ tagged_or_atagged_member(struct context *ctx,
 			*type = &builtin_type_error;
 			return;
 		}
-		_atype = idecl->decl.type.type;
+		_atype = obj->idecl->decl.type.type;
 	}
 	*type = NULL;
 	*atype = _atype;
@@ -807,9 +805,7 @@ type_init_from_atype(struct context *ctx,
 
 		if (obj->otype == O_SCAN) {
 			// an incomplete declaration was encountered
-			struct incomplete_declaration *idecl =
-				(struct incomplete_declaration *)obj;
-			if (size_only && idecl->type == IDECL_DECL) {
+			if (size_only && obj->idecl->type == IDECL_DECL) {
 				wrap_resolver(ctx, obj, resolve_dimensions);
 				type->size = obj->type->size;
 				type->align = obj->type->align;
