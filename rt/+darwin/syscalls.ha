@@ -92,5 +92,17 @@ export fn mmap(
 export fn munmap(addr: *opaque, length: size) int =
 	syscall2(SYS_munmap, addr: uintptr: u64, length: u64): int;
 
+export fn sysctl(
+	name: *i32,
+	namelen: u32,
+	oldp: nullable *opaque,
+	oldlenp: nullable *size,
+	newp: nullable *opaque,
+	newlen: size,
+) int = syscall6(SYS_sysctl,
+	name: uintptr: u64, namelen: u64,
+	oldp: uintptr: u64, oldlenp: uintptr: u64,
+	newp: uintptr: u64, newlen: u64): int;
+
 export def SIGABRT: int	= 6;
 export def SIGCHLD: int	= 20;

@@ -20,6 +20,7 @@ expr_hash(const struct expression *expr)
 	switch (storage) {
 	case STORAGE_DONE:
 	case STORAGE_ERROR:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_VOID:
 		break;

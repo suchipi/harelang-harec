@@ -164,6 +164,8 @@ type_storage_unparse(enum type_storage storage)
 		return "int";
 	case STORAGE_NEVER:
 		return "never";
+	case STORAGE_NOMEM:
+		return "nomem";
 	case STORAGE_NULL:
 		return "null";
 	case STORAGE_OPAQUE:
@@ -219,6 +221,7 @@ type_is_integer(struct context *ctx, const struct type *type)
 	case STORAGE_ARRAY:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_POINTER:
 	case STORAGE_SLICE:
@@ -267,6 +270,7 @@ type_is_numeric(struct context *ctx, const struct type *type)
 	case STORAGE_ARRAY:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_POINTER:
 	case STORAGE_SLICE:
@@ -330,6 +334,7 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_ERROR: // XXX?
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_POINTER:
 	case STORAGE_SLICE:
@@ -393,6 +398,7 @@ type_hash(const struct type *type)
 	case STORAGE_I64:
 	case STORAGE_INT:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
@@ -929,6 +935,7 @@ type_is_assignable(struct context *ctx,
 	case STORAGE_F32:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
@@ -1085,6 +1092,7 @@ type_is_castable(struct context *ctx, const struct type *to, const struct type *
 	case STORAGE_VOID:
 	case STORAGE_DONE:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_FUNCTION:
 	case STORAGE_TUPLE:
@@ -1160,8 +1168,8 @@ builtin_types_init(const char *target)
 		&builtin_type_u8, &builtin_type_u16, &builtin_type_u32,
 		&builtin_type_u64, &builtin_type_uint, &builtin_type_uintptr,
 		&builtin_type_null, &builtin_type_rune, &builtin_type_size,
-		&builtin_type_void, &builtin_type_done, &builtin_type_str,
-		&builtin_type_valist,
+		&builtin_type_void, &builtin_type_done, &builtin_type_nomem,
+		&builtin_type_str, &builtin_type_valist,
 	};
 	for (size_t i = 0; i < sizeof(builtins) / sizeof(builtins[0]); ++i) {
 		builtins[i]->id = type_hash(builtins[i]);
@@ -1216,6 +1224,12 @@ builtin_type_never = {
 	.storage = STORAGE_NEVER,
 	.size = SIZE_UNDEFINED,
 	.align = ALIGN_UNDEFINED,
+},
+builtin_type_nomem = {
+	.storage = STORAGE_NOMEM,
+	.flags = TYPE_ERROR,
+	.size = 0,
+	.align = 0,
 },
 builtin_type_opaque = {
 	.storage = STORAGE_OPAQUE,

@@ -66,6 +66,8 @@ builtin_type_for_storage(enum type_storage storage)
 		return &builtin_type_int;
 	case STORAGE_NEVER:
 		return &builtin_type_never;
+	case STORAGE_NOMEM:
+		return &builtin_type_nomem;
 	case STORAGE_OPAQUE:
 		return &builtin_type_opaque;
 	case STORAGE_RUNE:
@@ -400,8 +402,7 @@ enforce_tagged_invariants(struct context *ctx, struct location loc,
 }
 
 static size_t
-sum_tagged_memb(struct context *ctx,
-		const struct type_tagged_union *u)
+sum_tagged_memb(struct context *ctx, const struct type_tagged_union *u)
 {
 	size_t nmemb = 0;
 	for (; u; u = u->next) {
@@ -776,6 +777,7 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_I64:
 	case STORAGE_INT:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
 	case STORAGE_SIZE:

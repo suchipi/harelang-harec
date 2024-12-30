@@ -60,6 +60,7 @@ static const char *tokens[] = {
 	[T_LET] = "let",
 	[T_MATCH] = "match",
 	[T_NEVER] = "never",
+	[T_NOMEM] = "nomem",
 	[T_NULL] = "null",
 	[T_NULLABLE] = "nullable",
 	[T_OFFSET] = "offset",
@@ -1159,6 +1160,7 @@ token_str(const struct token *tok)
 		case STORAGE_ERROR:
 		case STORAGE_FUNCTION:
 		case STORAGE_NEVER:
+		case STORAGE_NOMEM:
 		case STORAGE_NULL:
 		case STORAGE_OPAQUE:
 		case STORAGE_POINTER:

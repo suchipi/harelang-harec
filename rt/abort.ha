@@ -18,16 +18,14 @@ export @symbol("rt.abort") fn _abort(
 	kill(getpid(), SIGABRT);
 };
 
-// See harec:include/gen.h
+// See harec:include/expr.h enum fixed_aborts
 const reasons: [_]str = [
 	"slice or array access out of bounds",	// 0
 	"type assertion failed",		// 1
-	"out of memory",			// 2
-	"static append exceeds slice capacity",	// 3
-	"unreachable code",			// 4
-	"slice allocation capacity smaller than initializer",	// 5
-	"assertion failed",			// 6
-	"error occurred",			// 7
+	"unreachable code",			// 2
+	"slice allocation capacity smaller than initializer",	// 3
+	"assertion failed",			// 4
+	"error occurred",			// 5
 ];
 
 export fn abort_fixed(path: *str, line: u64, col: u64, i: u64) void = {
@@ -38,10 +36,10 @@ fn u64tos(u: u64) str = {
 	static let buf: [20]u8 = [0...]; // len("18446744073709551615")
 	let sl = buf[..0];
 	if (u == 0) {
-		static append(sl, '0');
+		static append(sl, '0')!;
 	};
 	for (u > 0) {
-		static append(sl, (u % 10): u8 + '0');
+		static append(sl, (u % 10): u8 + '0')!;
 		u /= 10;
 	};
 	for (let s = 0z, e = len(sl) - 1; s < e) {

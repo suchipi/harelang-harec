@@ -30,7 +30,7 @@ fn storage() void = {
 		assert(x[i] == expected[i]);
 	};
 
-	let x: *[1]u8 = alloc([0...]);
+	let x: *[1]u8 = alloc([0...])!;
 	free(x);
 };
 

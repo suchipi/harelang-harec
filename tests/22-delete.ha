@@ -3,7 +3,7 @@ use rt;
 type my_slice = []int;
 
 fn index() void = {
-	let x: []int = alloc([1, 2, 3, 4, 5]);
+	let x: []int = alloc([1, 2, 3, 4, 5])!;
 	let y = &x: *my_slice;
 
 	delete(x[1]);
@@ -19,7 +19,7 @@ fn index() void = {
 };
 
 fn slice() void = {
-	let x: my_slice = alloc([1, 2, 3, 4, 5]);
+	let x: my_slice = alloc([1, 2, 3, 4, 5])!;
 	let y = &x;
 	const s = y: *rt::slice;
 
@@ -33,7 +33,7 @@ fn slice() void = {
 	assert(len(x) == 0);
 	assert(s.capacity < 5);
 
-	append(x, [6, 7, 8, 9]...);
+	append(x, [6, 7, 8, 9]...)!;
 	delete(x[1..3]);
 	assert(len(x) == 2);
 	assert(x[0] == 6 && x[1] == 9);

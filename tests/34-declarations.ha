@@ -504,18 +504,18 @@ fn reject() void = {
 			const t = unexported_type[i];
 			const d = exported_decl[j];
 			let buf = buf[..0];
-			static append(buf, toutf8("type a = struct { x: int };\n")...);
-			static append(buf, toutf8(d.0)...);
+			static append(buf, toutf8("type a = struct { x: int };\n")...)!;
+			static append(buf, toutf8(d.0)...)!;
 			if (d.1 != "") {
-				static append(buf, toutf8(t.0)...);
-				static append(buf, toutf8(d.1)...);
+				static append(buf, toutf8(t.0)...)!;
+				static append(buf, toutf8(d.1)...)!;
 			};
 			if (d.2 != "") {
-				static append(buf, toutf8(t.1)...);
-				static append(buf, toutf8(d.2)...);
+				static append(buf, toutf8(t.1)...)!;
+				static append(buf, toutf8(d.2)...)!;
 			};
 			compile(status::CHECK, *(&buf: *str))!;
-			static insert(buf[0], toutf8("export ")...);
+			static insert(buf[0], toutf8("export ")...)!;
 			compile(status::SUCCESS, *(&buf: *str))!;
 		};
 	};

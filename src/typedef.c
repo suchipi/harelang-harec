@@ -194,6 +194,9 @@ emit_literal(const struct expression *expr, FILE *out)
 	case STORAGE_ERROR:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
+		xfprintf(out, "nomem");
+		break;
 	case STORAGE_OPAQUE:
 	case STORAGE_VALIST:
 		assert(0); // Invariant
@@ -241,6 +244,7 @@ emit_type(const struct type *type, FILE *out)
 	case STORAGE_I8:
 	case STORAGE_INT:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_OPAQUE:
 	case STORAGE_RCONST:

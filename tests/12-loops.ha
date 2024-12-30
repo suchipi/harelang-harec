@@ -200,9 +200,9 @@ fn for_each() void = {
 	let slice: []int = [];
 	defer free(slice);
 
-	append(slice, 1);
-	append(slice, 2);
-	append(slice, 3);
+	append(slice, 1)!;
+	append(slice, 2)!;
+	append(slice, 3)!;
 
 	let pairs = [
 		("Hello", 1),

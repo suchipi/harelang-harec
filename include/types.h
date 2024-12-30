@@ -17,6 +17,7 @@ enum type_storage {
 	STORAGE_I8,
 	STORAGE_INT,
 	STORAGE_NEVER,
+	STORAGE_NOMEM,
 	STORAGE_NULL,
 	STORAGE_OPAQUE,
 	STORAGE_RUNE,
@@ -216,6 +217,7 @@ extern struct type
 	builtin_type_i8,
 	builtin_type_int,
 	builtin_type_never,
+	builtin_type_nomem,
 	builtin_type_null,
 	builtin_type_opaque,
 	builtin_type_rune,
@@ -227,6 +229,8 @@ extern struct type
 	builtin_type_uint,
 	builtin_type_uintptr,
 	builtin_type_void,
+
+	// etc
 	builtin_type_str,
 	builtin_type_valist;
 

@@ -25,8 +25,8 @@ def V2: [0]int = [];
 def V3 = (void, void);
 def V4 = struct { v: void = void };
 
-def u32_tag = 1906196061;
-def u64_tag = 1268499444;
+def u32_tag = 1268499444;
+def u64_tag = 3181589295;
 
 fn write() void = {
 	assert(x == 42 && y == 69);

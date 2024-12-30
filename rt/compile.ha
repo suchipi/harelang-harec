@@ -50,12 +50,12 @@ export fn compile(
 
 		// FIXME use $BINOUT variable
 		let harec = alloc_cstr("./.bin/harec");
-		let argv: []nullable *u8 = alloc([harec]...);
+		let argv: []nullable *u8 = alloc([harec]...)!;
 
 		for (let i = 0z; i < len(flags); i += 1) {
-			append(argv, alloc_cstr(flags[i]));
+			append(argv, alloc_cstr(flags[i]))!;
 		};
-		append(argv, [alloc_cstr("-o/dev/null"), alloc_cstr("-"), null]...);
+		append(argv, [alloc_cstr("-o/dev/null"), alloc_cstr("-"), null]...)!;
 
 		execve(harec, *(&argv: **[*]nullable *u8), envp);
 		exit(status::_EXEC_FAILED);

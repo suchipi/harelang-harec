@@ -130,16 +130,16 @@ fn nested() void = {
 	};
 
 	defer {
-		defer append(sl, 6);
+		defer append(sl, 6)!;
 		defer if (true) {
-			append(sl, 3);
-			defer append(sl, 5);
-			append(sl, 4);
+			append(sl, 3)!;
+			defer append(sl, 5)!;
+			append(sl, 4)!;
 		};
-		append(sl, 2);
+		append(sl, 2)!;
 	};
-	defer append(sl, 1);
-	append(sl, 0);
+	defer append(sl, 1)!;
+	append(sl, 0)!;
 };
 
 fn spam() void = {

@@ -53,6 +53,7 @@ enum lexical_token {
 	T_LET,
 	T_MATCH,
 	T_NEVER,
+	T_NOMEM,
 	T_NULL,
 	T_NULLABLE,
 	T_OFFSET,

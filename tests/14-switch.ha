@@ -127,26 +127,26 @@ fn exhaustivity() void = {
 
 	let buf: [4096]u8 = [0...];
 	let buf = buf[..0];
-	static append(buf, toutf8("fn test() void = switch (0u8) {")...);
+	static append(buf, toutf8("fn test() void = switch (0u8) {")...)!;
 	for :outer (let i: u8 = '0'; i <= '2'; i += 1) {
 		for (let j: u8 = '0'; j <= '9'; j += 1) {
 			for (let k: u8 = '0'; k <= '9'; k += 1) {
 				if (i == '2' && j == '5' && k == '6') {
 					break :outer;
 				};
-				static append(buf, toutf8("case ")...);
+				static append(buf, toutf8("case ")...)!;
 				if (i != '0') {
-					static append(buf, i);
+					static append(buf, i)!;
 				};
 				if (i != '0' || j != '0') {
-					static append(buf, j);
+					static append(buf, j)!;
 				};
-				static append(buf, k);
-				static append(buf, toutf8("=> void;")...);
+				static append(buf, k)!;
+				static append(buf, toutf8("=> void;")...)!;
 			};
 		};
 	};
-	static append(buf, toutf8("};")...);
+	static append(buf, toutf8("};")...)!;
 	compile(status::SUCCESS, *(&buf: *str))!;
 
 	compile(status::CHECK, "

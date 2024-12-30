@@ -194,15 +194,15 @@ export fn main() void = {
 	// identifier exceeds maximum length
 	let buf: [1024]u8 = [0...];
 	let buf = buf[..0];
-	static append(buf, rt::toutf8("let a")...);
+	static append(buf, rt::toutf8("let a")...)!;
 	// IDENT_MAX (in identifier.h) is defined as 255
 	for (let i = 0z; i < 255 / 2; i += 1) {
-		static append(buf, rt::toutf8("::a")...);
+		static append(buf, rt::toutf8("::a")...)!;
 	};
 	const n = len(buf);
-	static append(buf, rt::toutf8(" = 0;")...);
+	static append(buf, rt::toutf8(" = 0;")...)!;
 	compile(status::SUCCESS, *(&buf: *str))!;
-	static insert(buf[n], rt::toutf8("::a")...);
+	static insert(buf[n], rt::toutf8("::a")...)!;
 	compile(status::PARSE, *(&buf: *str))!;
 	assert(size(packed) == packedsz);
 	assert(size(packed) == 9);

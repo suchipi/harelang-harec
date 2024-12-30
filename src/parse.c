@@ -400,6 +400,9 @@ parse_primitive_type(struct lexer *lexer)
 	case T_DONE:
 		type->storage = STORAGE_DONE;
 		break;
+	case T_NOMEM:
+		type->storage = STORAGE_NOMEM;
+		break;
 	case T_OPAQUE:
 		type->storage = STORAGE_OPAQUE;
 		break;
@@ -658,6 +661,7 @@ parse_type(struct lexer *lexer)
 	case T_I8:
 	case T_INT:
 	case T_NEVER:
+	case T_NOMEM:
 	case T_OPAQUE:
 	case T_RUNE:
 	case T_SIZE:
@@ -780,12 +784,15 @@ parse_literal(struct lexer *lexer)
 	case T_DONE:
 		exp->literal.storage = STORAGE_DONE;
 		return exp;
+	case T_NOMEM:
+		exp->literal.storage = STORAGE_NOMEM;
+		return exp;
 	case T_LITERAL:
 		exp->literal.storage = tok.storage;
 		break;
 	default:
-		synerr(&tok, T_LITERAL, T_TRUE,
-			T_FALSE, T_NULL, T_VOID, T_EOF);
+		synerr(&tok, T_LITERAL, T_TRUE, T_FALSE, T_NULL,
+			T_VOID, T_DONE, T_NOMEM, T_EOF);
 		break;
 	}
 
@@ -835,6 +842,7 @@ parse_literal(struct lexer *lexer)
 		break;
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_VOID:
 		assert(0); // Handled above
@@ -1024,6 +1032,7 @@ parse_plain_expression(struct lexer *lexer)
 	case T_DONE:
 	case T_FALSE:
 	case T_LITERAL:
+	case T_NOMEM:
 	case T_NULL:
 	case T_TRUE:
 	case T_VOID:
@@ -1358,6 +1367,9 @@ parse_slice_mutation(struct lexer *lexer, bool is_static)
 }
 
 static struct ast_expression *
+parse_postfix_expression(struct lexer *lexer, struct ast_expression *lvalue);
+
+static struct ast_expression *
 parse_static_expression(struct lexer *lexer, bool allowbinding)
 {
 	struct token tok = {0};
@@ -1376,7 +1388,9 @@ parse_static_expression(struct lexer *lexer, bool allowbinding)
 	case T_INSERT:
 	case T_DELETE:
 		unlex(lexer, &tok);
-		return parse_slice_mutation(lexer, true);
+		struct ast_expression *lval = parse_slice_mutation(lexer, true);
+		// XXX: this is a hack around #954
+		return parse_postfix_expression(lexer, lval);
 	default:
 		if (allowbinding) {
 			synerr(&tok, T_LET, T_CONST, T_ABORT,
@@ -1390,10 +1404,81 @@ parse_static_expression(struct lexer *lexer, bool allowbinding)
 }
 
 static struct ast_expression *
+parse_va_expression(struct lexer *lexer)
+{
+	struct ast_expression *expr;
+	struct token tok;
+	switch (lex(lexer, &tok)) {
+	case T_VASTART:
+		expr = mkexpr(lexer->loc);
+		expr->type = EXPR_VASTART;
+		want(lexer, T_LPAREN, NULL);
+		want(lexer, T_RPAREN, NULL);
+		return expr;
+	case T_VAARG:
+		expr = mkexpr(lexer->loc);
+		expr->type = EXPR_VAARG;
+		want(lexer, T_LPAREN, NULL);
+		expr->vaarg.ap = parse_object_selector(lexer);
+		want(lexer, T_COMMA, NULL);
+		expr->vaarg.type = parse_type(lexer);
+		want(lexer, T_RPAREN, NULL);
+		return expr;
+	case T_VAEND:
+		expr = mkexpr(lexer->loc);
+		expr->type = EXPR_VAEND;
+		want(lexer, T_LPAREN, NULL);
+		expr->vaarg.ap = parse_object_selector(lexer);
+		want(lexer, T_RPAREN, NULL);
+		return expr;
+	default:
+		assert(0);
+	}
+}
+
+static struct ast_expression *
+parse_builtin_expression(struct lexer *lexer)
+{
+	struct token tok;
+	switch (lex(lexer, &tok)) {
+	case T_ALLOC:
+	case T_FREE:
+		unlex(lexer, &tok);
+		return parse_allocation_expression(lexer);
+	case T_APPEND:
+	case T_DELETE:
+	case T_INSERT:
+		unlex(lexer, &tok);
+		return parse_slice_mutation(lexer, false);
+	case T_STATIC:
+		return parse_static_expression(lexer, false);
+	case T_ABORT:
+	case T_ASSERT:
+		unlex(lexer, &tok);
+		return parse_assertion_expression(lexer, false);
+	case T_ALIGN:
+	case T_SIZE:
+	case T_LEN:
+	case T_OFFSET:
+		unlex(lexer, &tok);
+		return parse_measurement_expression(lexer);
+	case T_VAARG:
+	case T_VAEND:
+	case T_VASTART:
+		unlex(lexer, &tok);
+		return parse_va_expression(lexer);
+	default:
+		unlex(lexer, &tok);
+		break;
+	}
+	return parse_plain_expression(lexer);
+}
+
+static struct ast_expression *
 parse_postfix_expression(struct lexer *lexer, struct ast_expression *lvalue)
 {
 	if (lvalue == NULL) {
-		lvalue = parse_plain_expression(lexer);
+		lvalue = parse_builtin_expression(lexer);
 	}
 
 	struct token tok;
@@ -1478,77 +1563,6 @@ parse_object_selector(struct lexer *lexer)
 	return exp;
 }
 
-static struct ast_expression *
-parse_va_expression(struct lexer *lexer)
-{
-	struct ast_expression *expr;
-	struct token tok;
-	switch (lex(lexer, &tok)) {
-	case T_VASTART:
-		expr = mkexpr(lexer->loc);
-		expr->type = EXPR_VASTART;
-		want(lexer, T_LPAREN, NULL);
-		want(lexer, T_RPAREN, NULL);
-		return expr;
-	case T_VAARG:
-		expr = mkexpr(lexer->loc);
-		expr->type = EXPR_VAARG;
-		want(lexer, T_LPAREN, NULL);
-		expr->vaarg.ap = parse_object_selector(lexer);
-		want(lexer, T_COMMA, NULL);
-		expr->vaarg.type = parse_type(lexer);
-		want(lexer, T_RPAREN, NULL);
-		return expr;
-	case T_VAEND:
-		expr = mkexpr(lexer->loc);
-		expr->type = EXPR_VAEND;
-		want(lexer, T_LPAREN, NULL);
-		expr->vaarg.ap = parse_object_selector(lexer);
-		want(lexer, T_RPAREN, NULL);
-		return expr;
-	default:
-		assert(0);
-	}
-}
-
-static struct ast_expression *
-parse_builtin_expression(struct lexer *lexer)
-{
-	struct token tok;
-	switch (lex(lexer, &tok)) {
-	case T_ALLOC:
-	case T_FREE:
-		unlex(lexer, &tok);
-		return parse_allocation_expression(lexer);
-	case T_APPEND:
-	case T_DELETE:
-	case T_INSERT:
-		unlex(lexer, &tok);
-		return parse_slice_mutation(lexer, false);
-	case T_STATIC:
-		return parse_static_expression(lexer, false);
-	case T_ABORT:
-	case T_ASSERT:
-		unlex(lexer, &tok);
-		return parse_assertion_expression(lexer, false);
-	case T_ALIGN:
-	case T_SIZE:
-	case T_LEN:
-	case T_OFFSET:
-		unlex(lexer, &tok);
-		return parse_measurement_expression(lexer);
-	case T_VAARG:
-	case T_VAEND:
-	case T_VASTART:
-		unlex(lexer, &tok);
-		return parse_va_expression(lexer);
-	default:
-		unlex(lexer, &tok);
-		break;
-	}
-	return parse_postfix_expression(lexer, NULL);
-}
-
 static struct ast_expression *parse_compound_expression(struct lexer *lexer);
 static struct ast_expression *parse_match_expression(struct lexer *lexer);
 static struct ast_expression *parse_switch_expression(struct lexer *lexer);
@@ -1579,7 +1593,7 @@ parse_unary_expression(struct lexer *lexer)
 		return parse_switch_expression(lexer);
 	default:
 		unlex(lexer, &tok);
-		return parse_builtin_expression(lexer);
+		return parse_postfix_expression(lexer, NULL);
 	}
 }
 

@@ -355,33 +355,15 @@ static void
 check_expr_alloc_init(struct context *ctx,
 	const struct ast_expression *aexpr,
 	struct expression *expr,
-	const struct type *hint)
+	const struct type *inithint,
+	bool nullable)
 {
 	// alloc(initializer) case
-	bool nullable = false;
-	const struct type *inithint = NULL;
-	if (hint) {
-		const struct type *htype = type_dealias(ctx, hint);
-		switch (htype->storage) {
-		case STORAGE_POINTER:
-			inithint = htype->pointer.referent;
-			nullable = htype->pointer.nullable;
-			// TODO: Describe the use of pointer flags in the spec
-			break;
-		case STORAGE_SLICE:
-			inithint = hint;
-			break;
-		case STORAGE_TAGGED:
-			// TODO
-			break;
-		default:
-			// The user's code is wrong here, but we'll let it fail
-			// later.
-			break;
-		}
-	}
-
 	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, inithint);
+	if (expr->alloc.init->result->storage == STORAGE_ERROR) {
+		mkerror(expr);
+		return;
+	}
 
 	const struct type *objtype = expr->alloc.init->result;
 	if (type_dealias(ctx, objtype)->storage == STORAGE_ARRAY
@@ -415,7 +397,7 @@ check_expr_alloc_init(struct context *ctx,
 		}
 	}
 
-	expr->result = type_store_lookup_pointer(ctx,
+	expr->alloc.allocation_result = type_store_lookup_pointer(ctx,
 		aexpr->loc, objtype, nullable);
 
 	if (expr->alloc.init->result->size == SIZE_UNDEFINED) {
@@ -426,13 +408,13 @@ check_expr_alloc_init(struct context *ctx,
 }
 
 static void
-check_expr_alloc_slice(struct context *ctx,
+check_expr_alloc_cap(struct context *ctx,
 	const struct ast_expression *aexpr,
 	struct expression *expr,
-	const struct type *hint)
+	const struct type *inithint)
 {
-	// alloc(init, capacity) case
-	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, hint);
+	// alloc(init, length/capacity) case
+	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, inithint);
 	if (expr->alloc.init->result->storage == STORAGE_ERROR) {
 		mkerror(expr);
 		return;
@@ -481,7 +463,7 @@ check_expr_alloc_slice(struct context *ctx,
 	}
 
 	const struct type *membtype = type_dealias(ctx, objtype)->array.members;
-	expr->result = type_store_lookup_slice(ctx,
+	expr->alloc.allocation_result = type_store_lookup_slice(ctx,
 		aexpr->alloc.init->loc, membtype);
 
 	if (objtype->storage == STORAGE_ARRAY
@@ -494,10 +476,10 @@ static void
 check_expr_alloc_copy(struct context *ctx,
 	const struct ast_expression *aexpr,
 	struct expression *expr,
-	const struct type *hint)
+	const struct type *inithint)
 {
 	// alloc(init...) case
-	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, hint);
+	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, inithint);
 	if (expr->alloc.init->result->storage == STORAGE_ERROR) {
 		mkerror(expr);
 		return;
@@ -511,21 +493,68 @@ check_expr_alloc_copy(struct context *ctx,
 			type_storage_unparse(result->storage));
 		return;
 	}
-	if (hint) {
-		const struct type *htype = type_dealias(ctx, hint);
-		if (htype->storage != STORAGE_SLICE
-				&& htype->storage != STORAGE_TAGGED) {
-			error(ctx, aexpr->alloc.init->loc, expr,
-				"Hint must be a slice type, not %s",
-				type_storage_unparse(htype->storage));
+
+	result = type_dealias(ctx, expr->alloc.init->result);
+	expr->alloc.allocation_result = type_store_lookup_slice(ctx,
+			aexpr->alloc.init->loc, result->array.members);
+}
+
+static void
+alloc_inithint(struct context *ctx,
+	const struct type *hint,
+	enum alloc_kind kind,
+	const struct type **inithint,
+	bool *nullable)
+{
+	const struct type *htype = NULL;
+	hint = type_dealias(ctx, hint);
+
+	switch (hint->storage) {
+	case STORAGE_TAGGED:;
+		const struct type_tagged_union *first = &hint->tagged,
+			*second = first->next;
+
+		if (second->next != NULL) {
+			*inithint = NULL;
 			return;
 		}
+
+		if (first->type == &builtin_type_nomem) {
+			htype = second->type;
+		} else if (second->type == &builtin_type_nomem) {
+			htype = first->type;
+		} else {
+			*inithint = NULL;
+			return;
+		}
+
+		break;
+	case STORAGE_POINTER:
+	case STORAGE_SLICE:
+		// handle cases such as
+		// let a: alloc(0) as *u8;
+		// let b: []u8 = alloc([0])!;
+		htype = hint;
+		break;
+	default:
+		*inithint = NULL;
+		return;
 	}
 
-	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, hint);
-	result = type_dealias(ctx, expr->alloc.init->result);
-	expr->result = type_store_lookup_slice(ctx,
-			aexpr->alloc.init->loc, result->array.members);
+	switch (htype->storage) {
+	case STORAGE_POINTER:
+		if (kind == ALLOC_OBJECT) {
+			*inithint = htype->pointer.referent;
+			*nullable = htype->pointer.nullable;
+		}
+		break;
+	case STORAGE_SLICE:
+		*inithint = hint;
+		break;
+	default:
+		*inithint = NULL;
+		return;
+	};
 }
 
 static void
@@ -536,21 +565,44 @@ check_expr_alloc(struct context *ctx,
 {
 	assert(aexpr->type == EXPR_ALLOC);
 	expr->type = EXPR_ALLOC;
+	expr->result = &builtin_type_void;
 	expr->alloc.init = xcalloc(1, sizeof(struct expression));
 	expr->alloc.kind = aexpr->alloc.kind;
+
+	const struct type *inithint = NULL;
+	bool nullable = false;
+
+	if (hint != NULL) {
+		alloc_inithint(ctx, hint, expr->alloc.kind, &inithint, &nullable);
+	}
+
 	switch (aexpr->alloc.kind) {
 	case ALLOC_OBJECT:
-		check_expr_alloc_init(ctx, aexpr, expr, hint);
+		check_expr_alloc_init(ctx, aexpr, expr, inithint, nullable);
 		break;
 	case ALLOC_CAP:
-		check_expr_alloc_slice(ctx, aexpr, expr, hint);
+		check_expr_alloc_cap(ctx, aexpr, expr, inithint);
 		break;
 	case ALLOC_COPY:
-		check_expr_alloc_copy(ctx, aexpr, expr, hint);
+		check_expr_alloc_copy(ctx, aexpr, expr, inithint);
 		break;
 	case ALLOC_LEN:
 		abort(); // Not determined by parse
 	}
+
+	if (expr->result == &builtin_type_error) {
+		return;
+	}
+
+	struct type_tagged_union nomem_tag = {
+		.type = &builtin_type_nomem,
+		.next = NULL,
+	};
+	struct type_tagged_union tags = {
+		.type = expr->alloc.allocation_result,
+		.next = &nomem_tag,
+	};
+	expr->result = type_store_lookup_tagged(ctx, aexpr->loc, &tags);
 }
 
 static void
@@ -561,7 +613,18 @@ check_expr_append_insert(struct context *ctx,
 {
 	assert(aexpr->type == EXPR_APPEND || aexpr->type == EXPR_INSERT);
 	expr->type = aexpr->type;
-	expr->result = &builtin_type_void;
+
+	struct type_tagged_union nomem_tag = {
+		.type = &builtin_type_nomem,
+		.next = NULL,
+	};
+	struct type_tagged_union tags = {
+		.type = &builtin_type_void,
+		.next = &nomem_tag,
+	};
+
+	expr->result = type_store_lookup_tagged(ctx, aexpr->loc, &tags);
+
 	expr->append.is_static = aexpr->append.is_static;
 	expr->append.is_multi = aexpr->append.is_multi;
 	expr->append.object = xcalloc(1, sizeof(struct expression));
@@ -1014,6 +1077,7 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
 	case STORAGE_FUNCTION:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
 	case STORAGE_SLICE:
@@ -1051,6 +1115,7 @@ type_has_default(struct context *ctx, const struct type *type)
 	case STORAGE_I64:
 	case STORAGE_I8:
 	case STORAGE_INT:
+	case STORAGE_NOMEM:
 	case STORAGE_RUNE:
 	case STORAGE_SIZE:
 	case STORAGE_SLICE:
@@ -1749,6 +1814,7 @@ check_expr_literal(struct context *ctx,
 		expr->literal.bval = aexpr->literal.bval;
 		break;
 	case STORAGE_DONE:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_VOID:
 		// No storage
@@ -4041,6 +4107,7 @@ check_exported_type(struct context *ctx,
 	case STORAGE_ICONST:
 	case STORAGE_INT:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_OPAQUE:
 	case STORAGE_RCONST:

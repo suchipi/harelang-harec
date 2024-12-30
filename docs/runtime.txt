@@ -9,12 +9,10 @@ fn abort_fixed(path: *str, line: u64, col: u64, reason: u64) void;
 
 	0: Slice or array access out-of-bounds
 	1: Type assertion failed
-	2: Out of memory
-	3: Static append exceeds slice capacity
-	4: Unreachable code
-	5: Slice allocation capacity smaller than initializer
-	6: Generic assertion failure without a message
-	7: Error assertion failed
+	2: Unreachable code
+	3: Slice allocation capacity smaller than initializer
+	4: Generic assertion failure without a message
+	5: Error assertion failed
 
 fn memcpy(dest: *opaque, src: *opaque, n: size) void;
 	Copy "n" bytes from "src" to "dest". The memory areas shall not
@@ -32,8 +30,10 @@ fn strcmp(a: str, b: str) bool;
 "ensure" and "unensure" are called when slices are expanded or deleted. The
 "length" field of the slice will have been updated, and ensure should allocate
 or re-allocate the data field to have sufficient space, and update the capacity
-field accordingly. "unensure" is called when the space is no longer needed, and
-should shrink the allocation as appropriate.
+field accordingly and return true. in the case that the re-allocation was not
+successful, false should be returned and the slice should not be modified.
+"unensure" is called when the space is no longer needed, and should shrink the
+allocation as appropriate, if possible.
 
 	type slice = struct {
 		data: nullable *opaque,
@@ -41,7 +41,7 @@ should shrink the allocation as appropriate.
 		capacity: size,
 	};
 
-	fn ensure(s: *slice, membsz: size) void;
+	fn ensure(s: *slice, membsz: size) bool;
 	fn unensure(s: *slice, membsz: size) void;
 
 "malloc" and "free" are required to support the "alloc" and "free" built-ins.

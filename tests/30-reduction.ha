@@ -3,9 +3,9 @@ use rt::{compile, status, toutf8};
 fn assert_fail(expr: str) void = {
 	let buf: [1024]u8 = [0...];
 	let buf = buf[..0];
-	static append(buf, toutf8("export fn main() void = {\n")...);
-	static append(buf, toutf8(expr)...);
-	static append(buf, toutf8(";\n};")...);
+	static append(buf, toutf8("export fn main() void = {\n")...)!;
+	static append(buf, toutf8(expr)...)!;
+	static append(buf, toutf8(";\n};")...)!;
 	compile(status::CHECK, *(&buf: *str))!;
 };
 
