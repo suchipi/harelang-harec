@@ -84,50 +84,37 @@ scope_free_all(struct scopes *scopes)
 	}
 }
 
-void
-scope_object_init(struct scope_object *object, enum object_type otype,
-	struct ident *ident, struct ident *name, const struct type *type,
-	struct expression *value)
-{
-	object->ident = ident;
-	object->name = name;
-	object->otype = otype;
-	if (type) {
-		object->type = type;
-	} else if (value) {
-		object->value = value;
-		assert(otype == O_CONST);
-		assert(value->type == EXPR_LITERAL);
-	}
-	flexible_refer(type, &object->type);
-}
-
-void
-scope_insert_from_object(struct scope *scope, struct scope_object *object)
-{
-	// Linked list
-	*scope->next = object;
-	scope->next = &object->lnext;
-
-	// Hash map
-	uint32_t hash = name_hash(FNV1A_INIT, object->name);
-	struct scope_object **bucket = &scope->buckets[hash % SCOPE_BUCKETS];
-	if (*bucket) {
-		object->mnext = *bucket;
-	}
-	*bucket = object;
-}
-
 struct scope_object *
 scope_insert(struct scope *scope, enum object_type otype,
 	struct ident *ident, struct ident *name, const struct type *type,
 	struct expression *value)
 {
 	assert(otype == O_SCAN || !type != !value);
-	struct scope_object *o = xcalloc(1, sizeof(struct scope_object));
-	scope_object_init(o, otype, ident, name, type, value);
-	scope_insert_from_object(scope, o);
-	return o;
+	struct scope_object *obj = xcalloc(1, sizeof(struct scope_object));
+	obj->ident = ident;
+	obj->name = name;
+	obj->otype = otype;
+	if (type) {
+		obj->type = type;
+	} else if (value) {
+		obj->value = value;
+		assert(otype == O_CONST);
+		assert(value->type == EXPR_LITERAL);
+	}
+	flexible_refer(type, &obj->type);
+
+	// Linked list
+	*scope->next = obj;
+	scope->next = &obj->lnext;
+
+	// Hash map
+	uint32_t hash = name_hash(FNV1A_INIT, obj->name);
+	struct scope_object **bucket = &scope->buckets[hash % SCOPE_BUCKETS];
+	if (*bucket) {
+		obj->mnext = *bucket;
+	}
+	*bucket = obj;
+	return obj;
 }
 
 struct scope_object *

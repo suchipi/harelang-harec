@@ -90,12 +90,6 @@ struct scope *scope_lookup_label(struct scope *scope, const char *label);
 void scope_free(struct scope *scope);
 void scope_free_all(struct scopes *scopes);
 
-void scope_object_init(struct scope_object *obj, enum object_type otype,
-	struct ident *ident, struct ident *name,
-	const struct type *type, struct expression *value);
-
-void scope_insert_from_object(struct scope *scope, struct scope_object *object);
-
 struct scope_object *scope_insert(struct scope *scope,
 	enum object_type otype, struct ident *ident, struct ident *name,
 	const struct type *type, struct expression *value);
