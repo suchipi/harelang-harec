@@ -525,8 +525,10 @@ gen_expr_alloc_slice_array_at(struct gen_context *ctx,
 			length = qcap;
 		}
 	} else {
+		struct qbe_value bytelen = mkqtmp(ctx, ctx->arch.sz, ".%d");
+		pushi(ctx->current, &bytelen, Q_MUL, &length, &membsz, NULL);
 		pushi(ctx->current, NULL, Q_CALL, &ctx->rt.memcpy,
-				&qnewdata, &initdata, &sz, NULL);
+			&qnewdata, &initdata, &bytelen, NULL);
 	}
 
 	// cap == 0 case
