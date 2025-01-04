@@ -957,6 +957,8 @@ gen_expr_binarithm_gv(struct gen_context *ctx, const struct type *result,
 
 	struct gen_value gresult = mkgtemp(ctx, result, ".%d");
 	struct qbe_value qresult = mkqval(ctx, &gresult);
+	ltype = type_dealias(NULL, ltype);
+	rtype = type_dealias(NULL, rtype);
 	assert((ltype->storage == STORAGE_STRING) == (rtype->storage == STORAGE_STRING));
 	if (ltype->storage == STORAGE_STRING) {
 		pushi(ctx->current, &qresult, Q_CALL,

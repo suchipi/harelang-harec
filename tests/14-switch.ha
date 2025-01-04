@@ -69,6 +69,28 @@ fn basics() void = {
 		case => void;
 		};
 	")!;
+
+	compile(status::SUCCESS, `
+		type alias = str;
+		fn test() void = switch ("asdf") {
+		case "fdsa": alias => void;
+		case => void;
+		};
+	`)!;
+	compile(status::SUCCESS, `
+		type alias = str;
+		fn test() void = switch ("asdf": alias) {
+		case "fdsa" => void;
+		case => void;
+		};
+	`)!;
+	compile(status::SUCCESS, `
+		type alias = str;
+		fn test() void = switch ("asdf": alias) {
+		case "fdsa": alias => void;
+		case => void;
+		};
+	`)!;
 };
 
 fn tagged_result() void = {
