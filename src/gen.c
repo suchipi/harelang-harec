@@ -3030,6 +3030,12 @@ gen_expr_switch_with(struct gen_context *ctx,
 	struct gen_value gvout = gv_void;
 	if (!out) {
 		gvout = mkgtemp(ctx, expr->result, ".%d");
+		if (expr->result->storage != STORAGE_NEVER && expr->result->size != 0) {
+			// XXX: hack, to make gvout appear initialized to QBE
+			struct qbe_value qout = mkqval(ctx, &gvout);
+			struct qbe_value zero = constl(0);
+			pushi(ctx->current, &qout, Q_COPY, &zero, NULL);
+		}
 	}
 
 	struct qbe_statement lout;

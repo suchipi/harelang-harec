@@ -214,6 +214,11 @@ fn duplicates() void = {
 	")!;
 };
 
+// make sure this compiles and also passes through QBE successfully
+fn f() int = switch (0) {
+case => abort();
+};
+
 fn label() void = {
 	switch :foo (0) {
 	case 0 =>
