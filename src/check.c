@@ -2169,7 +2169,7 @@ check_expr_for_each(struct context *ctx,
 			initializer_result = initializer_type->array.members;
 		} else {
 			initializer_result = type_store_lookup_pointer(ctx,
-				aexpr->loc, initializer_type->array.members, 0);
+				aexpr->loc, initializer_type->array.members, false);
 		}
 		break;
 	case FOR_EACH_ITERATOR:
@@ -3583,7 +3583,7 @@ check_expr_unarithm(struct context *ctx,
 			}
 		}
 		expr->result = type_store_lookup_pointer(
-			ctx, aexpr->loc, operand->result, 0);
+			ctx, aexpr->loc, operand->result, false);
 		break;
 	case UN_DEREF:
 		if (type_dealias(ctx, operand->result)->storage != STORAGE_POINTER) {
