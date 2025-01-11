@@ -769,7 +769,7 @@ gen_expr_assign_slice_expandable(struct gen_context *ctx, struct qbe_value obase
 
 	struct qbe_value sz = constl(membsz);
 	struct qbe_value off = mkqtmp(ctx, ctx->arch.sz, ".%d");
-	struct gen_value odata = mkgtemp(ctx, &builtin_type_uintptr, ".%d");
+	struct gen_value odata = mkgtemp(ctx, rvalue->result, ".%d");
 	struct qbe_value qodata = mkqval(ctx, &odata);
 	pushi(ctx->current, &off, Q_MUL, &ostart, &sz, NULL);
 	pushi(ctx->current, &qodata, Q_ADD, &obase, &off, NULL);
