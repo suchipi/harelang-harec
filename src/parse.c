@@ -1067,9 +1067,6 @@ parse_plain_expression(struct lexer *lexer)
 			synerr(&tok, T_RPAREN, T_COMMA, T_EOF);
 		}
 		assert(0); // Unreachable
-	// empty block
-	case T_RBRACE:
-		error(tok.loc, "syntax error: cannot have empty block");
 	default:
 		synerr(&tok, T_LITERAL, T_NAME,
 			T_LBRACKET, T_STRUCT, T_LPAREN, T_EOF);
@@ -1973,7 +1970,17 @@ parse_switch_expression(struct lexer *lexer)
 		struct ast_switch_case *_case =
 			*next_case = xcalloc(1, sizeof(struct ast_switch_case));
 		want(lexer, T_CASE, &tok);
+		struct location caseloc = tok.loc;
 		_case->options = parse_case_options(lexer);
+
+		switch (lex(lexer, &tok)) {
+		case T_CASE:
+		case T_RBRACE:
+			error(caseloc, "syntax error: case cannot be empty");
+		default:
+			unlex(lexer, &tok);
+			break;
+		}
 
 		bool exprs = true;
 		struct ast_expression_list *cur = &_case->exprs;
@@ -2044,6 +2051,7 @@ parse_match_expression(struct lexer *lexer)
 		struct ast_match_case *_case =
 			*next_case = xcalloc(1, sizeof(struct ast_match_case));
 		want(lexer, T_CASE, &tok);
+		struct location caseloc = tok.loc;
 
 		_case->name = NULL;
 		struct ast_type *type = NULL;
@@ -2070,6 +2078,14 @@ parse_match_expression(struct lexer *lexer)
 		}
 
 		want(lexer, T_ARROW, &tok);
+		switch (lex(lexer, &tok)) {
+		case T_CASE:
+		case T_RBRACE:
+			error(caseloc, "syntax error: case cannot be empty");
+		default:
+			unlex(lexer, &tok);
+			break;
+		}
 
 		bool exprs = true;
 		struct ast_expression_list *cur = &_case->exprs;
@@ -2316,6 +2332,15 @@ parse_compound_expression(struct lexer *lexer)
 		break; // no-op
 	default:
 		synerr(&tok, T_LBRACE, T_COLON, T_EOF);
+		break;
+	}
+
+	struct location loc = tok.loc;
+	switch (lex(lexer, &tok)) {
+	case T_RBRACE:
+		error(loc, "syntax error: cannot have empty block");
+	default:
+		unlex(lexer, &tok);
 		break;
 	}
 
