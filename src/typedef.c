@@ -337,7 +337,7 @@ emit_type(const struct type *type, FILE *out)
 		xfprintf(out, ")");
 		break;
 	case STORAGE_ICONST:
-		xfprintf(out, "[iconst min=%" PRIi64 " max=%" PRIi64 "]", type->flexible.min,
+		xfprintf(out, "[flexible integer: min=%" PRIi64 " max=%" PRIi64 "]", type->flexible.min,
 			type->flexible.max);
 		break;
 	}

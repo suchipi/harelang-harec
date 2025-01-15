@@ -147,7 +147,7 @@ type_storage_unparse(enum type_storage storage)
 	case STORAGE_ERROR:
 		return "invalid";
 	case STORAGE_FCONST:
-		return "fconst";
+		return "flexible float";
 	case STORAGE_FUNCTION:
 		return "function";
 	case STORAGE_I16:
@@ -159,7 +159,7 @@ type_storage_unparse(enum type_storage storage)
 	case STORAGE_I8:
 		return "i8";
 	case STORAGE_ICONST:
-		return "iconst";
+		return "flexible integer";
 	case STORAGE_INT:
 		return "int";
 	case STORAGE_NEVER:
@@ -173,7 +173,7 @@ type_storage_unparse(enum type_storage storage)
 	case STORAGE_POINTER:
 		return "pointer";
 	case STORAGE_RCONST:
-		return "rconst";
+		return "flexible rune";
 	case STORAGE_RUNE:
 		return "rune";
 	case STORAGE_SIZE:

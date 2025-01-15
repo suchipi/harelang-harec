@@ -150,8 +150,9 @@ fn aggregates() void = {
 
 	// Tuples
 
-	// The edge cases of the iconst lowering algorithm were already tested
-	// above, and tuple items can't affect each other, so this suffices
+	// The edge cases of the flexible type lowering algorithm were already
+	// tested above, and tuple items can't affect each other, so this
+	// suffices
 	let tuple = if (true) (2147483647, 0.0, 'a') else void;
 	tuple as (int, f64, rune);
 
