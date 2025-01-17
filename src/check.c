@@ -988,14 +988,6 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 	}
 
 	switch (da->storage) {
-	case STORAGE_ARRAY:
-		if (da->array.length == SIZE_UNDEFINED && da->array.members) {
-			return b;
-		}
-		if (db->array.length == SIZE_UNDEFINED && db->array.members) {
-			return a;
-		}
-		return NULL;
 	case STORAGE_ENUM:
 		if (da->alias.type->storage == db->storage) {
 			return a;
@@ -1074,6 +1066,7 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 		}
 		return NULL;
 	// Cannot be promoted
+	case STORAGE_ARRAY:
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
 	case STORAGE_FUNCTION:
