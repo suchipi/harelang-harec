@@ -425,6 +425,11 @@ fn reject() void = {
 		"@fini fn f() void;",
 		"@test fn f() void;",
 
+		// @init/@fini/@test with C variadism
+		"@init fn f(...) void = void;",
+		"@fini fn f(...) void = void;",
+		"@test fn f(...) void = void;",
+
 		// @symbol alongside other attributes
 		`@symbol("foo") @init fn foo() void = void;`,
 		`@symbol("foo") @fini fn foo() void = void;`,

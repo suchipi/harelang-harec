@@ -3860,6 +3860,8 @@ check_function(struct context *ctx,
 		}
 		if (afndecl->prototype.params) {
 			error(ctx, adecl->loc, NULL, "%s function cannot have parameters", flag);
+		} else if (obj->type->func.variadism != VARIADISM_NONE) {
+			error(ctx, adecl->loc, NULL, "%s function cannot be variadic", flag);
 		}
 	}
 
