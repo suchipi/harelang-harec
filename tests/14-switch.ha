@@ -64,6 +64,15 @@ fn basics() void = {
 	")!;
 
 	compile(status::CHECK, "
+		fn test() void = switch (&x) { case => void; };
+	")!;
+
+	compile(status::CHECK, "
+		let x = 0;
+		fn test() void = switch (null) { case => void; };
+	")!;
+
+	compile(status::CHECK, "
 		fn test() void = switch (0i32) {
 		case 0i64 => void;
 		case => void;
