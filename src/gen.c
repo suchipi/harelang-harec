@@ -1573,7 +1573,7 @@ gen_expr_cast(struct gen_context *ctx, const struct expression *expr)
 				alloc_for_align(expr->cast.value->result->align);
 			struct qbe_value size =
 				constl(expr->cast.value->result->size);
-			pushi(ctx->current, &qbase, alloc, &size, NULL);
+			pushprei(ctx->current, &qbase, alloc, &size, NULL);
 			gen_type_assertion_at(ctx, expr, gbase);
 		} else {
 			gbase = gen_expr(ctx, expr->cast.value);
