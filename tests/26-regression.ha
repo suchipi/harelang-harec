@@ -255,4 +255,5 @@ export fn main() void = {
 	compile(status::CHECK, "type e = enum { A }; fn f() void = { e::A: bool; };")!;
 
 	let c: []u8 = alloc([]: []u8, 20)!;
+	free(c);
 };
