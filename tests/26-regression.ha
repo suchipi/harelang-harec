@@ -256,4 +256,6 @@ export fn main() void = {
 
 	let c: []u8 = alloc([]: []u8, 20)!;
 	free(c);
+
+	compile(status::CHECK, "let x: nullable *int = &(0: [*]int)[0];")!;
 };
