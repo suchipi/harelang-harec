@@ -34,7 +34,7 @@ fn multi() void = {
 	free(x);
 
 	let x: []int = alloc([], 3)!;
-	insert(x[0], &[1, 2, 3]...)!;
+	insert(x[0], [1, 2, 3]...)!;
 	assert(len(x) == 3);
 	free(x);
 };
@@ -57,7 +57,7 @@ fn _static() void = {
 	};
 
 	let x = [1, 2, 3][..0];
-	static insert(x[0], &[1, 2, 3]...)!;
+	static insert(x[0], [1, 2, 3]...)!;
 	assert(len(x) == 3);
 };
 
