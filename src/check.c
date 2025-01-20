@@ -1322,7 +1322,7 @@ check_expr_binding(struct context *ctx,
 				xcalloc(1, sizeof(struct expression));
 			if (!eval_expr(ctx, initializer, value)) {
 				error(ctx, initializer->loc, value,
-					"Unable to evaluate constant init at compile time");
+					"Unable to evaluate constant initializer at compile time");
 				type = &builtin_type_error;
 			}
 			binding->initializer = value;
