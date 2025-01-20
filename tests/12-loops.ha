@@ -197,12 +197,7 @@ fn foreach_tagged_alias() (tagged_alias | done) = {
 
 fn for_each() void = {
 	let array = [1, 2, 3];
-	let slice: []int = [];
-	defer free(slice);
-
-	append(slice, 1)!;
-	append(slice, 2)!;
-	append(slice, 3)!;
+	let slice: []int = [1, 2, 3];
 
 	let pairs = [
 		("Hello", 1),
