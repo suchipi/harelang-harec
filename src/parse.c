@@ -2167,11 +2167,9 @@ parse_binding_list(struct lexer *lexer, bool is_static)
 			binding->name = intern_name(lexer->itbl, tok.name);
 			break;
 		case T_LPAREN:
-			if (exp->type == EXPR_BINDING) {
-				parse_binding_unpack(lexer, &binding->unpack);
-				break;
-			}
-			// fallthrough
+			synassert(exp->type == EXPR_BINDING, &tok, T_NAME, T_EOF);
+			parse_binding_unpack(lexer, &binding->unpack);
+			break;
 		default:
 			synerr(&tok, T_NAME, T_LPAREN, T_EOF);
 		}
