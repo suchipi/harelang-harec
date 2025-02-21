@@ -14,6 +14,7 @@
 #undef strdup
 
 const char **sources;
+const char **full_sources;
 size_t nsources;
 
 uint32_t
@@ -143,7 +144,7 @@ append_buffer(char **buf, size_t *restrict ln, size_t *restrict cap,
 void
 errline(struct location loc)
 {
-	const char *path = sources[loc.file];
+	const char *path = full_sources[loc.file];
 	struct stat filestat;
 	if (stat(path, &filestat) == -1 || !S_ISREG(filestat.st_mode)) {
 		return;

@@ -155,6 +155,9 @@ main(int argc, char *argv[])
 	memcpy((char **)sources + 1, argv + optind, sizeof(char **) * nsources);
 	sources[0] = "<unknown>";
 
+	full_sources = xcalloc(nsources + 2, sizeof(char **));
+	memcpy((char **)full_sources, sources, sizeof(char **) * (nsources + 1));
+
 	if (modpath) {
 		size_t modlen = strlen(modpath);
 		for (size_t i = 1; i <= nsources; i++) {

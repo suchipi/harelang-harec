@@ -17,6 +17,8 @@ enum exit_status {
 };
 
 extern const char **sources;
+// Sources unaffected by the -M option
+extern const char **full_sources;
 extern size_t nsources;
 
 #define FNV1A_INIT 2166136261u
