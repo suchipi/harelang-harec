@@ -1158,7 +1158,7 @@ builtin_types_init(const char *target)
 		builtin_type_valist.size = 24;
 		builtin_type_valist.align = 8;
 	} else {
-		xfprintf(stderr, "Unsupported or unrecognized target: %s", target);
+		xfprintf(stderr, "Unsupported or unrecognized target: %s\n", target);
 		exit(EXIT_USER);
 	}
 	struct type *builtins[] = {
