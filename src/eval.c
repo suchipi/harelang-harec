@@ -1052,6 +1052,113 @@ eval_tuple(struct context *ctx,
 	return true;
 }
 
+static bool
+eval_address_object(struct context *ctx,
+	const struct expression *restrict in,
+	struct expression *restrict out)
+{
+	const struct expression_access *access =
+		&in->unarithm.operand->access;
+	struct expression new_in = {0};
+	const struct type *operand_type;
+	switch (access->type) {
+	case ACCESS_IDENTIFIER:
+		if (access->object->otype != O_DECL) {
+			return false;
+		}
+		out->literal.object = access->object;
+		out->literal.ival = 0;
+		return true;
+	case ACCESS_INDEX:
+		new_in = *in;
+		new_in.unarithm.operand = access->array;
+		if (!eval_expr(ctx, &new_in, out)) {
+			return false;
+		}
+		struct expression index = {0};
+		if (!eval_expr(ctx, access->index, &index)) {
+			return false;
+		}
+		operand_type = type_dealias(ctx, access->array->result);
+		if (operand_type->storage != STORAGE_ARRAY) {
+			// autodereferencing not allowed
+			return false;
+		}
+		out->literal.ival +=
+			index.literal.uval * operand_type->array.members->size;
+		return true;
+	case ACCESS_FIELD:
+		new_in = *in;
+		new_in.unarithm.operand = access->_struct;
+		if (!eval_expr(ctx, &new_in, out)) {
+			return false;
+		}
+		operand_type = type_dealias(ctx, access->tuple->result);
+		if (operand_type->storage != STORAGE_STRUCT) {
+			// autodereferencing not allowed
+			return false;
+		}
+		out->literal.ival += access->field->offset;
+		return true;
+	case ACCESS_TUPLE:
+		new_in = *in;
+		new_in.unarithm.operand = access->tuple;
+		if (!eval_expr(ctx, &new_in, out)) {
+			return false;
+		}
+		operand_type = type_dealias(ctx, access->tuple->result);
+		if (operand_type->storage != STORAGE_TUPLE) {
+			// autodereferencing not allowed
+			return false;
+		}
+		out->literal.ival += access->tvalue->offset;
+		return true;
+	}
+	return true;
+}
+
+static bool
+eval_address_other(struct context *ctx,
+	const struct expression *restrict in,
+	struct expression *restrict out)
+{
+	struct expression *value = xcalloc(1, sizeof(struct expression));
+	if (!eval_expr(ctx, in->unarithm.operand, value)) {
+		return false;
+	}
+
+	static int serial = 0;
+	char *symbol = gen_name(&serial, "static.%d");
+	struct ident *name = mkident(ctx, NULL, symbol);
+
+	append_decl(ctx, &(struct declaration){
+		.decl_type = DECL_GLOBAL,
+		.file = in->loc.file,
+		.ident = name,
+		.symbol = symbol,
+		.exported = false,
+		.global = {
+			.type = value->result,
+			.value = value,
+			.threadlocal = false,
+		}
+	});
+
+	struct scope_object *obj = scope_insert(ctx->scope,
+			O_DECL, name, name, value->result, NULL);
+
+	struct expression shadow = *in;
+	shadow.unarithm.operand = &(struct expression){
+		.type = EXPR_ACCESS,
+		.access = (struct expression_access){
+			.type = ACCESS_IDENTIFIER,
+			.object = obj,
+		},
+	};
+	bool r = eval_address_object(ctx, &shadow, out);
+	assert(r);
+	return true;
+}
 
 static bool
 eval_unarithm(struct context *ctx,
@@ -1065,65 +1172,11 @@ eval_unarithm(struct context *ctx,
 			out->literal.uval = 0;
 			return true;
 		}
-		if (in->unarithm.operand->type != EXPR_ACCESS) {
-			return false;
-		}
-		const struct expression_access *access =
-			&in->unarithm.operand->access;
-		struct expression new_in = {0};
-		const struct type *operand_type;
-		switch (access->type) {
-		case ACCESS_IDENTIFIER:
-			if (access->object->otype != O_DECL) {
-				return false;
-			}
-			out->literal.object = access->object;
-			out->literal.ival = 0;
-			return true;
-		case ACCESS_INDEX:
-			new_in = *in;
-			new_in.unarithm.operand = access->array;
-			if (!eval_expr(ctx, &new_in, out)) {
-				return false;
-			}
-			struct expression index = {0};
-			if (!eval_expr(ctx, access->index, &index)) {
-				return false;
-			}
-			operand_type = type_dealias(ctx, access->array->result);
-			if (operand_type->storage != STORAGE_ARRAY) {
-				// autodereferencing not allowed
-				return false;
-			}
-			out->literal.ival +=
-				index.literal.uval * operand_type->array.members->size;
-			return true;
-		case ACCESS_FIELD:
-			new_in = *in;
-			new_in.unarithm.operand = access->_struct;
-			if (!eval_expr(ctx, &new_in, out)) {
-				return false;
-			}
-			operand_type = type_dealias(ctx, access->tuple->result);
-			if (operand_type->storage != STORAGE_STRUCT) {
-				// autodereferencing not allowed
-				return false;
-			}
-			out->literal.ival += access->field->offset;
-			return true;
-		case ACCESS_TUPLE:
-			new_in = *in;
-			new_in.unarithm.operand = access->tuple;
-			if (!eval_expr(ctx, &new_in, out)) {
-				return false;
-			}
-			operand_type = type_dealias(ctx, access->tuple->result);
-			if (operand_type->storage != STORAGE_TUPLE) {
-				// autodereferencing not allowed
-				return false;
-			}
-			out->literal.ival += access->tvalue->offset;
-			return true;
+		switch (in->unarithm.operand->type) {
+		case EXPR_ACCESS:
+			return eval_address_object(ctx, in, out);
+		default:
+			return eval_address_other(ctx, in, out);
 		}
 	}
 

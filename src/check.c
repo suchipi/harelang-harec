@@ -3750,7 +3750,7 @@ check_expression(struct context *ctx,
 	flexible_refer(expr->result, &expr->result);
 }
 
-static void
+void
 append_decl(struct context *ctx, struct declaration *decl)
 {
 	struct declarations *decls = xcalloc(1, sizeof(struct declarations));

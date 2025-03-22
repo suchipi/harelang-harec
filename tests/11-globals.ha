@@ -137,12 +137,16 @@ const ptr: *u32 = &val;
 const ptr_arr: *int = &arr[1];
 const ptr_struct = &_struct.y;
 const ptr_tup: *str = &tup.1;
+const ptr_literal = struct {
+	x: *u32 = &1234u32,
+};
 
 fn pointers() void = {
 	assert(ptr == &val && *ptr == val);
 	assert(ptr_arr == &arr[1] && *ptr_arr == 2);
 	assert(ptr_struct == &_struct.y && *ptr_struct == 2);
 	assert(ptr_tup == &tup.1 && *ptr_tup == "asdf");
+	assert(*ptr_literal.x == 1234);
 
 	compile(status::CHECK, "let a = [1, 2, 3]; let b = &a[3];")!;
 	compile(status::CHECK, "let a = (1, 2, 3); let b = &a.3;")!;

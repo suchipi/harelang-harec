@@ -163,7 +163,6 @@ export fn main() void = {
 		};
 		def A: a = a { b = 0 };"
 	)!;
-	compile(status::CHECK, "let a = &0;")!;
 	compile(status::CHECK, "def A: a = 1 % 1;")!;
 	compile(status::CHECK, "def A: b = void;")!;
 	static assert(true == true && true != false);

@@ -120,6 +120,8 @@ struct incomplete_decl {
 struct ident *mkident(struct context *ctx, struct ident *ident,
 		const char *symbol);
 
+void append_decl(struct context *ctx, struct declaration *decl);
+
 void mkstrliteral(struct expression *expr, const char *fmt, ...);
 
 char *gen_typename(const struct type *type);
