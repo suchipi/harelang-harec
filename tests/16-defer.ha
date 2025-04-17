@@ -98,26 +98,12 @@ fn _never() void = {
 			exit(x);
 		};
 	};
-
-	defer x += 1;
-	{
-		x = 0;
-		defer x += 1;
-		// above defers are run before this executes, so this is never
-		// actually reached
-		abort();
-	};
 };
 
 fn exit(x: int) never = {
 	assert(x == 0);
-	defer rt::exit(x);
-	(void: !void: (void | !void))!; // void
-	x = 1;
-	abort();
+	rt::exit(x);
 };
-
-@fini fn fini() void = assert(x == 2);
 
 fn nested() void = {
 	let sl: []size = [];

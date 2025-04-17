@@ -197,13 +197,6 @@ static void
 gen_fixed_abort(struct gen_context *ctx,
 	struct location loc, enum fixed_aborts reason)
 {
-	for (struct gen_scope *scope = ctx->scope; scope; scope = scope->parent) {
-		gen_defers(ctx, scope);
-		if (scope->scope->class == SCOPE_DEFER) {
-			break;
-		}
-	}
-
 	struct qbe_value path = mklval(ctx, &ctx->sources[loc.file]);
 	struct qbe_value line = constl(loc.lineno);
 	struct qbe_value col = constl(loc.colno);
@@ -643,13 +636,6 @@ gen_expr_assert(struct gen_context *ctx, const struct expression *expr)
 
 	if (expr->assert.message) {
 		struct gen_value msg = gen_expr(ctx, expr->assert.message);
-		for (struct gen_scope *scope = ctx->scope;
-				scope; scope = scope->parent) {
-			gen_defers(ctx, scope);
-			if (scope->scope->class == SCOPE_DEFER) {
-				break;
-			}
-		}
 		struct qbe_value path =
 			mklval(ctx, &ctx->sources[expr->loc.file]);
 		struct qbe_value line = constl(expr->loc.lineno);
