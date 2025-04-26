@@ -86,7 +86,10 @@ emit_literal(const struct expression *expr, FILE *out)
 		xfprintf(out, "%" PRIi64 "%s", val->ival,
 			storage_to_suffix(t->storage));
 		break;
-	case STORAGE_POINTER: // TODO
+	case STORAGE_POINTER:
+		xfprintf(out, "%" PRIu64 ": u64: uintptr: ", val->uval);
+		emit_type(expr->result, out);
+		break;
 	case STORAGE_NULL:
 		xfprintf(out, "null: ");
 		emit_type(expr->result, out);
