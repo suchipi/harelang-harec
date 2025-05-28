@@ -175,6 +175,7 @@ lex_init(struct lexer *lexer, FILE *f, int fileid, struct intern_table *itbl)
 	lexer->c[0] = UINT32_MAX;
 	lexer->c[1] = UINT32_MAX;
 	lexer->require_int = false;
+	lexer->in_annotation = false;
 	lexer->itbl = itbl;
 }
 
@@ -977,12 +978,11 @@ static void
 lex_annotation(struct lexer *lexer)
 {
 	// Scan and discard annotations
-	static bool in_annotation = false;
-	if (in_annotation) {
+	if (lexer->in_annotation) {
 		error(lexer->loc, "cannot nest annotations");
 		return;
 	}
-	in_annotation = true;
+	lexer->in_annotation = true;
 
 	struct token tok;
 	if (next(lexer, NULL, false) != '[') {
@@ -991,70 +991,78 @@ lex_annotation(struct lexer *lexer)
 	}
 
 	enum lexical_token ltok;
-	bool scan_balanced = false;
-	while (true) {
-		ltok = lex(lexer, &tok);
-		if (ltok == T_LPAREN) {
-			scan_balanced = true;
-			break;
-		} else if (ltok == T_RBRACKET) {
-			goto exit;
-		} else if (ltok != T_NAME) {
-			error(lexer->loc, "invalid annotation (expected identifier)");
-		}
 
+	// identifier
+	ltok = lex(lexer, &tok);
+	if (ltok != T_NAME) {
+		error(lexer->loc, "invalid annotation (expected identifier)");
+	}
+	while (true) {
 		ltok = lex(lexer, &tok);
 		if (ltok != T_DOUBLE_COLON) {
 			unlex(lexer, &tok);
+			break;
+		}
+		ltok = lex(lexer, &tok);
+		if (ltok != T_NAME) {
+			error(lexer->loc, "invalid annotation (expected identifier)");
 		}
 	}
 
-	if (scan_balanced) {
-		int sp = 0;
-		enum lexical_token stack[32] = {T_LPAREN, 0};
+	switch (lex(lexer, &tok))
+	{
+	case T_LPAREN:
+		break;
+	case T_RBRACKET:
+		goto exit;
+	default:
+		error(lexer->loc, "invalid annotation (expected '(' or ']')");
+	}
 
-		do {
-			if (sp + 1 >= 32) {
-				error(lexer->loc, "annotation is too nested");
-			}
+	// balanced list of tokens
+	int sp = 0;
+	enum lexical_token stack[32] = {T_LPAREN, 0};
 
-			enum lexical_token want = 0;
-			ltok = lex(lexer, &tok);
-			switch (ltok) {
-			case T_LPAREN:
-			case T_LBRACE:
-			case T_LBRACKET:
-				stack[++sp] = ltok;
-				break;
-			case T_RPAREN:
-				want = T_LPAREN;
-				break;
-			case T_RBRACE:
-				want = T_LBRACE;
-				break;
-			case T_RBRACKET:
-				want = T_LBRACKET;
-				break;
-			default:
-				break;
-			}
-
-			if (want != 0) {
-				ltok = stack[sp--];
-				if (ltok != want) {
-					error(lexer->loc, "unbalanced tokens in annotation");
-				}
-			}
-		} while (sp >= 0);
-
-		if (lex(lexer, &tok) != T_RBRACKET) {
-			error(lexer->loc, "invalid annotation (expected ']')");
-			return;
+	do {
+		if (sp + 1 >= 32) {
+			error(lexer->loc, "annotation is too nested");
 		}
+
+		enum lexical_token want = 0;
+		ltok = lex(lexer, &tok);
+		switch (ltok) {
+		case T_LPAREN:
+		case T_LBRACE:
+		case T_LBRACKET:
+			stack[++sp] = ltok;
+			break;
+		case T_RPAREN:
+			want = T_LPAREN;
+			break;
+		case T_RBRACE:
+			want = T_LBRACE;
+			break;
+		case T_RBRACKET:
+			want = T_LBRACKET;
+			break;
+		default:
+			break;
+		}
+
+		if (want != 0) {
+			ltok = stack[sp--];
+			if (ltok != want) {
+				error(lexer->loc, "unbalanced tokens in annotation");
+			}
+		}
+	} while (sp >= 0);
+
+	if (lex(lexer, &tok) != T_RBRACKET) {
+		error(lexer->loc, "invalid annotation (expected ']')");
 	}
 
 exit:
-	in_annotation = false;
+	lexer->in_annotation = false;
 }
 
 enum lexical_token

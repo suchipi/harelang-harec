@@ -175,6 +175,7 @@ struct lexer {
 	struct token un;
 	struct location loc;
 	bool require_int;
+	bool in_annotation;
 	struct intern_table *itbl;
 };
 
