@@ -551,7 +551,7 @@ fn basics() void = {
 	let b1 = true, b2 = false;
 	let p1: nullable *int = null;
 	let r1 = ['x', '\x0A', '\u1234', '\0', '\a', '\b', '\f', '\n', '\r', '\t',
-		'\v', '\\', '\'', '\"', '\U00123456', '\u0080', '\U00000080'];
+		'\v', '\\', '\'', '\"', '\U00103456', '\u0080', '\U00000080'];
 	static assert('a' == '\x61');
 	static assert('a' == '\u0061');
 	static assert('a' == '\U00000061');
@@ -564,7 +564,7 @@ fn basics() void = {
 	compile(status::LEX, `let r = '\xc3';`)!;
 	compile(status::LEX, `let r = '\x123';`)!;
 	compile(status::LEX, `let r = '\u69';`)!;
-	compile(status::LEX, `let r = '\U1234567';`)!;
+	compile(status::LEX, `let r = '\U0000007';`)!;
 	compile(status::LEX, `let r = '\xah';`)!;
 	compile(status::LEX, `let r = '\uahij';`)!;
 	compile(status::LEX, `let r = '\Uahijklmn';`)!;
@@ -576,6 +576,10 @@ fn basics() void = {
 	compile(status::LEX, `let r = '\u abc';`)!;
 	compile(status::LEX, `let r = '\U-abcdeff';`)!;
 	compile(status::LEX, `let r = '\U  +12345';`)!;
+
+	// invalid unicode
+	compile(status::LEX, `let r = '\U00110000';`)!;
+	compile(status::LEX, `let r = '\ud800';`)!;
 };
 
 export fn main() void = {
