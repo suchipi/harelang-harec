@@ -13,6 +13,11 @@ struct type_bucket {
 
 struct context;
 
+struct dimensions {
+	size_t size;
+	size_t align;
+};
+
 typedef struct type_bucket *type_store[TYPE_STORE_BUCKETS];
 
 // Applies the type reduction algorithm to the given tagged union.
