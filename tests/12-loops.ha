@@ -440,7 +440,6 @@ fn for_each() void = {
 	compile(status::CHECK, "fn test() void = { let slice: []int = []; for (let x .. slice) { append(slice, 1); };};")!;
 	compile(status::CHECK, "fn test() void = { let slice: []int = []; for (let x .. slice) { insert(slice[0], 1); };};")!;
 	compile(status::CHECK, "fn test() void = { let slice: []int = []; for (let x .. slice) { free(slice); };};")!;
-	compile(status::CHECK, "type d = !done;")!;
 };
 
 fn next() ((int, int) | done) = (4, 2);

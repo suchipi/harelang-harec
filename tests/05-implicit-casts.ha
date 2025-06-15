@@ -121,6 +121,12 @@ fn rules() void = {
 	// Non-const from const (copy)
 	const j = 10;
 	let k = j;
+
+	// non-void types cannot be assigned to void
+	compile(status::CHECK, `
+		fn disallow_1() void = "I am illegeal";
+		fn disallow_2() void = 12;
+	`)!;
 };
 
 fn rvalue() i64 = {

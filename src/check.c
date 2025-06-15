@@ -4563,11 +4563,6 @@ resolve_type(struct context *ctx, struct scope_object *obj)
 		error(ctx, loc, NULL, "Can't declare type alias of never");
 		alias->alias.type = &builtin_type_error;
 	}
-	if (alias->alias.type->storage == STORAGE_DONE
-			&& (alias->alias.type->flags & TYPE_ERROR) == TYPE_ERROR) {
-		error(ctx, loc, NULL, "Built-in type done cannot be an error type");
-		alias->alias.type = &builtin_type_error;
-	}
 
 	append_decl(ctx, &(struct declaration){
 		.decl_type = DECL_TYPE,

@@ -28,7 +28,7 @@ type_dereference(struct context *ctx, const struct type *type, bool allow_nullab
 	}
 }
 
-void
+static const struct scope_object *
 complete_alias(struct context *ctx, struct type *type)
 {
 	assert(type->storage == STORAGE_ALIAS);
@@ -38,33 +38,56 @@ complete_alias(struct context *ctx, struct type *type)
 	assert(obj->otype == O_TYPE || obj->otype == O_SCAN);
 	assert(obj->idecl->type == IDECL_DECL);
 
-	if (obj->idecl->dealias_in_progress) {
-		char *identstr = ident_unparse(obj->name);
-		error(ctx, obj->idecl->decl.loc, NULL,
-			"Circular dependency for '%s'", identstr);
-		free(identstr);
-		type->alias.type = &builtin_type_error;
-		return;
+	if (!obj->idecl->dealias_in_progress) {
+		obj->idecl->dealias_in_progress = true;
+		type->alias.type = type_store_lookup_atype(
+			ctx, obj->idecl->decl.type.type);
+		obj->idecl->dealias_in_progress = false;
 	}
-	obj->idecl->dealias_in_progress = true;
-	type->alias.type = type_store_lookup_atype(ctx, obj->idecl->decl.type.type);
-	obj->idecl->dealias_in_progress = false;
+	return obj;
 }
 
 const struct type *
-type_dealias(struct context *ctx, const struct type *type)
+type_dealias(struct context *ctx, const struct type *_type)
 {
+	struct type *type = (struct type *)_type;
 	while (type->storage == STORAGE_ALIAS) {
 		if (type->alias.type == NULL) {
 			// gen et al. don't have access to the check context,
 			// but by that point all aliases should already be fully
 			// scanned
 			assert(ctx != NULL);
+			const struct scope_object *obj =
+				complete_alias(ctx, type);
+			if (type->alias.type == NULL) {
+				char *identstr = ident_unparse(obj->name);
+				error(ctx, obj->idecl->decl.loc, NULL,
+					"Circular dependency for '%s'",
+					identstr);
+				free(identstr);
+				type->alias.type = &builtin_type_error;
+			}
+		}
+		type = (struct type *)type->alias.type;
+	}
+	return type;
+}
+
+// checks if a type is `done`, or an alias thereof, without erroring out when a
+// "circular dependency" is encountered (since that means the type isn't `done`)
+bool
+type_is_done(struct context *ctx, const struct type *type)
+{
+	while (type->storage == STORAGE_ALIAS) {
+		if (type->alias.type == NULL) {
 			complete_alias(ctx, (struct type *)type);
+			if (type->alias.type == NULL) {
+				return false;
+			}
 		}
 		type = type->alias.type;
 	}
-	return type;
+	return type->storage == STORAGE_DONE;
 }
 
 const struct struct_field *

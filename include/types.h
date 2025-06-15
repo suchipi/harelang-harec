@@ -160,6 +160,7 @@ struct type {
 const struct type *type_dereference(struct context *ctx, const struct type *type,
 		bool allow_nullable);
 const struct type *type_dealias(struct context *ctx, const struct type *type);
+bool type_is_done(struct context *ctx, const struct type *type);
 const struct struct_field *type_get_field(struct context *ctx,
 	const struct type *type, const char *name);
 const struct type_tuple *type_get_value(

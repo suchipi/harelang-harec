@@ -767,8 +767,17 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_ENUM:
 	case STORAGE_NULL:
 		assert(0); // Invariant
-	case STORAGE_BOOL:
 	case STORAGE_DONE:
+	case STORAGE_NEVER:
+		if (atype->flags & TYPE_ERROR) {
+			error(ctx, atype->loc, NULL,
+				"Error flag can't be used on %s type",
+				type_storage_unparse(atype->storage));
+			*type = builtin_type_error;
+			return (struct dimensions){0};
+		}
+		// fallthrough
+	case STORAGE_BOOL:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_I8:
@@ -776,7 +785,6 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_I32:
 	case STORAGE_I64:
 	case STORAGE_INT:
-	case STORAGE_NEVER:
 	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
@@ -832,6 +840,12 @@ type_init_from_atype(struct context *ctx,
 		} else if (atype->unwrap) {
 			*type = *type_dealias(ctx, obj->type);
 			break;
+		}
+		if ((atype->flags & TYPE_ERROR) && type_is_done(ctx, obj->type)) {
+			error(ctx, atype->loc, NULL,
+				"Error flag can't be used on done type");
+			*type = builtin_type_error;
+			return (struct dimensions){0};
 		}
 		type->alias.ident = obj->ident;
 		type->alias.name = obj->name;

@@ -1,12 +1,27 @@
 use rt::{compile, status};
 
 type err_int = !int;
+type err_recur = !*err_recur;
 
 fn assignability() void = {
 	// Error and non-error types are interchangable:
 	let a: !int = 10;
 	let b: int = a;
 	assert(a == b);
+
+	compile(status::CHECK, `
+		type err = !void;
+
+		fn reterr() (int | err) = {
+			return err;
+		};
+
+		fn properr() void = {
+			reterr()?;
+		};
+
+		export fn main() void = void;
+	`)!; // error types cannot be assigned to void
 };
 
 type error = !void;
@@ -40,34 +55,6 @@ fn cannotignore() void = {
 	err_if_false(true)!;
 };
 
-fn void_assignability() void = {
-	compile(status::CHECK, `
-		type err = !void;
-
-		fn reterr() (int | err) = {
-			return err;
-		};
-
-		fn properr() void = {
-			reterr()?;
-		};
-
-		export fn main() void = void;
-	`)!; // error types cannot be assigned to void
-
-	compile(status::CHECK, `
-		fn disallow_1() void = {
-			return "I am illegal";
-		};
-
-		fn disallow_2() void = {
-			return 12;
-		};
-
-		export fn main() void = void;
-	`)!; // non-void types cannot be assigned to void
-};
-
 fn measurements() void = {
 	assert(size(!int) == size(int));
 	assert(size(!f64) == size(f64));
@@ -91,10 +78,20 @@ fn measurements() void = {
 	assert(align(!*size) == align(*size));
 };
 
+type err_done_tagged_union = !(int | done);
+type done_tagged_union = (int | done);
+type err_done_tagged_union_alias = !done_tagged_union;
+
+fn disallowed_types() void = {
+	compile(status::CHECK, `type t = !done;`)!;
+	compile(status::CHECK, `type t = done; type u = t; type v = !u;`)!;
+	compile(status::CHECK, `fn f() !never;`)!;
+};
+
 export fn main() void = {
 	assignability();
 	propagate();
 	cannotignore();
-	void_assignability();
 	measurements();
+	disallowed_types();
 };
