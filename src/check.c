@@ -1929,14 +1929,31 @@ check_expr_control(struct context *ctx,
 	if (aexpr->control.label) {
 		scope = scope_lookup_label(ctx->scope, aexpr->control.label);
 		if (scope && scope->class != want) {
-			error(ctx, aexpr->loc, expr,
+			error(ctx, aexpr->loc, NULL,
 				"Selected expression must%s be a loop",
 				want == SCOPE_COMPOUND ? " not" : "");
 		}
 	} else {
 		scope = scope_lookup_class(ctx->scope, want);
 	}
-	if (!scope) {
+	if (scope) {
+		if (expr->type == EXPR_BREAK) {
+			scope->has_break = true;
+		}
+
+		struct scope *defer_scope =
+			scope_lookup_class(ctx->scope, SCOPE_DEFER);
+		if (defer_scope) {
+			defer_scope = aexpr->control.label
+				? scope_lookup_label(defer_scope, aexpr->control.label)
+				: scope_lookup_class(defer_scope, want);
+			if (scope == defer_scope) {
+				error(ctx, aexpr->loc, NULL,
+					"Cannot jump out of defer expression");
+				// continue checking so other errors can be reported
+			}
+		}
+	} else {
 		const char *msg;
 		switch (expr->type) {
 		case EXPR_BREAK:
@@ -1951,25 +1968,10 @@ check_expr_control(struct context *ctx,
 		default:
 			assert(0); // Invariant
 		}
-		error(ctx, aexpr->loc, expr, msg);
-		return;
-	}
-	struct scope *defer_scope = scope_lookup_class(ctx->scope, SCOPE_DEFER);
-	if (defer_scope) {
-		defer_scope = aexpr->control.label
-			? scope_lookup_label(defer_scope, aexpr->control.label)
-			: scope_lookup_class(defer_scope, want);
-		if (scope == defer_scope) {
-			error(ctx, aexpr->loc, expr,
-				"Cannot jump out of defer expression");
-			return;
-		}
+		error(ctx, aexpr->loc, NULL, msg);
+		// continue checking so other errors can be reported
 	}
 	expr->control.scope = scope;
-
-	if (expr->type == EXPR_BREAK) {
-		scope->has_break = true;
-	}
 
 	if (expr->type != EXPR_YIELD) {
 		return;
@@ -1977,11 +1979,16 @@ check_expr_control(struct context *ctx,
 
 	expr->control.value = xcalloc(1, sizeof(struct expression));
 	if (aexpr->control.value) {
+		const struct type *hint = scope ? scope->hint : NULL;
 		check_expression(ctx, aexpr->control.value,
-			expr->control.value, scope->hint);
+			expr->control.value, hint);
 	} else {
 		expr->control.value->type = EXPR_LITERAL;
 		expr->control.value->result = &builtin_type_void;
+	}
+
+	if (scope == NULL) {
+		return;
 	}
 
 	struct type_tagged_union *result =
@@ -2836,30 +2843,35 @@ check_expr_return(struct context *ctx,
 {
 	struct scope *defer = scope_lookup_class(ctx->scope, SCOPE_DEFER);
 	if (defer) {
-		error(ctx, aexpr->loc, expr,
+		error(ctx, aexpr->loc, NULL,
 			"Cannot return inside a defer expression");
-		return;
-	}
-	if (ctx->fntype == NULL) {
-		error(ctx, aexpr->loc, expr, "Cannot return outside a function body");
-		return;
+		// continue checking so other errors can be reported
 	}
 
 	expr->type = EXPR_RETURN;
 	expr->result = &builtin_type_never;
 
-	struct expression *rval = xcalloc(1, sizeof(struct expression));
+	struct expression *rval = expr->_return.value =
+		xcalloc(1, sizeof(struct expression));
 	if (aexpr->_return.value) {
-		check_expression(ctx, aexpr->_return.value, rval, ctx->fntype->func.result);
+		const struct type *hint = NULL;
+		if (ctx->fntype) {
+			hint = ctx->fntype->func.result;
+		}
+		check_expression(ctx, aexpr->_return.value, rval, hint);
 	} else {
 		rval->type = EXPR_LITERAL;
 		rval->result = &builtin_type_void;
+	}
+	if (ctx->fntype == NULL) {
+		error(ctx, aexpr->loc, NULL, "Cannot return outside a function body");
+		return;
 	}
 
 	if (!type_is_assignable(ctx, ctx->fntype->func.result, rval->result)) {
 		char *rettypename = gen_typename(rval->result);
 		char *fntypename = gen_typename(ctx->fntype->func.result);
-		error(ctx, aexpr->loc, expr,
+		error(ctx, aexpr->loc, NULL,
 			"Return type %s is not assignable to function result type %s",
 			rettypename, fntypename);
 		free(rettypename);
