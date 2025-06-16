@@ -167,7 +167,7 @@ lex_init(struct lexer *lexer, FILE *f, int fileid, struct intern_table *itbl)
 	lexer->in = f;
 	lexer->buflen = 0;
 	lexer->bufsz = 256;
-	lexer->buf = xcalloc(1, lexer->bufsz);
+	lexer->buf = xcalloc(lexer->bufsz, 1);
 	lexer->un.token = T_NONE;
 	lexer->loc.lineno = 1;
 	lexer->loc.colno = 0;
