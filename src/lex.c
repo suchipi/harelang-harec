@@ -187,14 +187,18 @@ lex_finish(struct lexer *lexer)
 }
 
 static void
-update_lineno(struct location *loc, uint32_t c)
+update_loc(struct location *loc, uint32_t c)
 {
 	if (c == '\n') {
 		loc->lineno++;
 		loc->colno = 0;
 	} else if (c == '\t') {
+		// set column to next multiple of 8
 		loc->colno += 8;
+		loc->colno &= ~7;
 	} else {
+		// XXX: this doesn't correctly handle all unicode
+		// codepoints/glyphs
 		loc->colno++;
 	}
 }
@@ -209,7 +213,7 @@ next(struct lexer *lexer, struct location *loc, bool buffer)
 		lexer->c[1] = UINT32_MAX;
 	} else {
 		c = utf8_get(lexer->in);
-		update_lineno(&lexer->loc, c);
+		update_loc(&lexer->loc, c);
 		if (c == UTF8_INVALID && !feof(lexer->in)) {
 			error(lexer->loc, "Invalid UTF-8 sequence encountered");
 		}
@@ -217,7 +221,7 @@ next(struct lexer *lexer, struct location *loc, bool buffer)
 	if (loc != NULL) {
 		*loc = lexer->loc;
 		for (size_t i = 0; i < 2 && lexer->c[i] != UINT32_MAX; i++) {
-			update_lineno(&lexer->loc, lexer->c[i]);
+			update_loc(&lexer->loc, lexer->c[i]);
 		}
 	}
 	if (c == C_EOF || !buffer) {
