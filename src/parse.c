@@ -15,7 +15,7 @@
 #include "utf8.h"
 #include "util.h"
 
-static noreturn void
+FORMAT(2, 3) static noreturn void
 error(struct location loc, const char *fmt, ...)
 {
 	xfprintf(stderr, "%s:%d:%d: ", sources[loc.file],

@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "util.h"
 
 enum qbe_stype {
 	Q__VOID = 'V',
@@ -271,7 +272,7 @@ void qbe_append_def(struct qbe_program *prog, struct qbe_def *def);
 
 void pushi(struct qbe_func *func, const struct qbe_value *out, enum qbe_instr instr, ...);
 void pushprei(struct qbe_func *func, const struct qbe_value *out, enum qbe_instr instr, ...);
-void pushc(struct qbe_func *func, const char *fmt, ...);
+void pushc(struct qbe_func *func, const char *fmt, ...) FORMAT(2, 3);
 void push(struct qbe_statements *stmts, struct qbe_statement *stmt);
 
 struct qbe_value constl(uint64_t l);

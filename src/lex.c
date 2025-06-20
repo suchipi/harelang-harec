@@ -145,7 +145,7 @@ static const char *tokens[] = {
 static_assert(sizeof(tokens) / sizeof(const char *) == T_LAST_OPERATOR + 1,
 	"tokens array isn't in sync with lexical_token enum");
 
-static noreturn void
+FORMAT(2, 3) static noreturn void
 error(struct location loc, const char *fmt, ...)
 {
 	xfprintf(stderr, "%s:%d:%d: syntax error: ", sources[loc.file],

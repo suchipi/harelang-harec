@@ -7,6 +7,7 @@
 #include "scope.h"
 #include "types.h"
 #include "type_store.h"
+#include "util.h"
 
 struct expression;
 
@@ -122,7 +123,7 @@ struct ident *mkident(struct context *ctx, struct ident *ident,
 
 void append_decl(struct context *ctx, struct declaration *decl);
 
-void mkstrliteral(struct expression *expr, const char *fmt, ...);
+void mkstrliteral(struct expression *expr, const char *fmt, ...) FORMAT(2, 3);
 
 char *gen_typename(const struct type *type);
 
@@ -164,5 +165,5 @@ void check_expression(struct context *ctx,
 	const struct type *hint);
 
 void error(struct context *ctx, struct location loc,
-	struct expression *expr, const char *fmt, ...);
+	struct expression *expr, const char *fmt, ...) FORMAT(4, 5);
 #endif

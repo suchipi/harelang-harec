@@ -32,18 +32,16 @@ void *xcalloc(size_t n, size_t s);
 void *xrealloc(void *p, size_t s);
 char *xstrdup(const char *s);
 
-#define FORMAT(FIRST)
+#define FORMAT(FMT_PARAM, VA_PARAM)
 #ifdef __has_attribute
 #if __has_attribute(format)
 #undef FORMAT
-#define FORMAT(FIRST) __attribute__((format(printf, 2, FIRST)))
+#define FORMAT(FMT_PARAM, VA_PARAM) __attribute__((format(printf, FMT_PARAM, VA_PARAM)))
 #endif
 #endif
 
-int xfprintf(FILE *restrict f, const char *restrict fmt, ...) FORMAT(3);
-int xvfprintf(FILE *restrict f, const char *restrict fmt, va_list ap) FORMAT(0);
-
-#undef FORMAT
+int xfprintf(FILE *restrict f, const char *restrict fmt, ...) FORMAT(2, 3);
+int xvfprintf(FILE *restrict f, const char *restrict fmt, va_list ap) FORMAT(2, 0);
 
 #define malloc(a) (void *)sizeof(struct { static_assert(0, "Use xcalloc instead"); int _; })
 #define calloc(a, b) (void *)sizeof(struct { static_assert(0, "Use xcalloc instead"); int _; })
