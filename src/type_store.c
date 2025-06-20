@@ -650,7 +650,6 @@ tuple_init_from_atype(struct context *ctx,
 	struct dimensions dim = {0};
 	while (atuple) {
 		struct dimensions memb = {0};
-		size_t offset = 0;
 		if (type) {
 			cur->type = type_store_lookup_atype(ctx, atuple->type);
 			memb = dim_from_type(cur->type);
@@ -665,8 +664,8 @@ tuple_init_from_atype(struct context *ctx,
 			}
 			return (struct dimensions){0};
 		}
+		size_t offset = dim.size;
 		if (memb.align != 0) {
-			offset = dim.size;
 			if (dim.size % memb.align) {
 				offset += memb.align - dim.size % memb.align;
 			}
@@ -679,9 +678,7 @@ tuple_init_from_atype(struct context *ctx,
 
 		atuple = atuple->next;
 		if (type) {
-			if (memb.align != 0) {
-				cur->offset = offset;
-			}
+			cur->offset = offset;
 			if (atuple) {
 				cur->next = xcalloc(1, sizeof(struct type_tuple));
 				cur = cur->next;
@@ -1264,9 +1261,9 @@ type_store_lookup_tuple(struct context *ctx, struct location loc,
 		if (t->type->align > type.align) {
 			type.align = t->type->align;
 		}
+		t->offset = type.size;
 		if (t->type->align != 0) {
-			t->offset = type.size;
-			if (type.size % t->type->align) {
+			if (type.size % t->type->align != 0) {
 				t->offset += t->type->align - type.size % t->type->align;
 			}
 			type.size = t->offset + t->type->size;
