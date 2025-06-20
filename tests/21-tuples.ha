@@ -152,6 +152,13 @@ fn unpacking() void = {
 	assert(a == 1 && b == 2 && d == 4);
 };
 
+fn _offset() void = {
+	const x = (0i32, void, 0i64);
+	static assert(offset(x.0) == 0);
+	static assert(offset(x.1) == 4);
+	static assert(offset(x.2) == align(i64));
+};
+
 // Regression tests for miscellaneous compiler bugs
 fn regression() void = {
 	let a: (((int | void), int) | void) = (void, 0);
@@ -239,6 +246,7 @@ export fn main() void = {
 	eval_expr_tuple();
 	eval_expr_access();
 	unpacking();
+	_offset();
 	regression();
 	reject();
 	_never();
