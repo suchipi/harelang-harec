@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -340,7 +341,7 @@ check_expr_access(struct context *ctx,
 			aexpr->access.value->literal.uval);
 		if (!expr->access.tvalue) {
 			error(ctx, aexpr->access.tuple->loc, expr,
-				"No such tuple value '%zu'",
+				"No such tuple value '%" PRIu64 "'",
 				aexpr->access.value->literal.uval);
 			return;
 		}
@@ -800,7 +801,7 @@ check_assert(struct context *ctx,
 		if (!cond) {
 			if (e.message != NULL) {
 				error(ctx, loc, expr, "Static assertion failed: %.*s",
-					expr->assert.message->literal.string.len,
+					(int)expr->assert.message->literal.string.len,
 					expr->assert.message->literal.string.value);
 			} else {
 				error(ctx, loc, expr, "Static assertion failed");
@@ -1968,7 +1969,7 @@ check_expr_control(struct context *ctx,
 		default:
 			assert(0); // Invariant
 		}
-		error(ctx, aexpr->loc, NULL, msg);
+		error(ctx, aexpr->loc, NULL, "%s", msg);
 		// continue checking so other errors can be reported
 	}
 	expr->control.scope = scope;
@@ -2483,7 +2484,7 @@ check_expr_match(struct context *ctx,
 					ctype, type);
 			}
 			if (err_msg) {
-				error(ctx, acase->type->loc, expr, err_msg);
+				error(ctx, acase->type->loc, expr, "%s", err_msg);
 				return;
 			}
 		}
