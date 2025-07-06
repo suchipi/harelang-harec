@@ -113,12 +113,6 @@ struct struct_field {
 
 struct type_struct_union {
 	struct struct_field *fields;
-	// c_compat is false if explicit offsets are used, or if the type is a
-	// union. The latter is actually still C-compatible, but this is an
-	// implementation detail which changes the way the QBE IL is generated,
-	// and in the case of unions, the altered behavior for explicit-offset
-	// structs is also correct for all cases of unions.
-	bool c_compat;
 	bool packed;
 };
 

@@ -212,11 +212,18 @@ emit_struct(const struct type *type, FILE *out)
 	xfprintf(out, "%s %s{ ",
 			type->storage == STORAGE_STRUCT ? "struct" : "union",
 			type->struct_union.packed ? "@packed " : "");
+	size_t offset = 0;
 	for (const struct struct_field *f = type->struct_union.fields;
 			f; f = f->next) {
-		if (!type->struct_union.c_compat) {
-			xfprintf(out, "@offset(%zu) ", f->offset);
+		size_t align = f->type->align;
+		if (align > 0) {
+			offset += (align - (offset % align)) % align;
 		}
+		if (f->offset > offset) {
+			xfprintf(out, "_: [%ld]u8, ", f->offset - offset);
+		}
+		offset = f->offset + f->size;
+
 		if (f->name) {
 			xfprintf(out, "%s: ", f->name);
 		}
