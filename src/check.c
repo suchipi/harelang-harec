@@ -3820,19 +3820,16 @@ check_function(struct context *ctx,
 	decl->func.scope = scope_push(&ctx->scope, SCOPE_FUNC);
 	struct ast_function_parameters *params = afndecl->prototype.params;
 	while (params) {
-		if (params->name == NULL) {
-			error(ctx, params->loc, NULL,
-				"Function parameters must be named");
-			return;
-		}
 		const struct type *type = type_store_lookup_atype(
 				ctx, params->type);
 		if (obj->type->func.variadism == VARIADISM_HARE
 				&& !params->next) {
 			type = type_store_lookup_slice(ctx, params->loc, type);
 		}
-		scope_insert(decl->func.scope, O_BIND, params->name,
-				params->name, type, NULL);
+		if (params->name != NULL) {
+			scope_insert(decl->func.scope, O_BIND, params->name,
+					params->name, type, NULL);
+		}
 		params = params->next;
 	}
 

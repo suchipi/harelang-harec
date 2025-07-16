@@ -111,11 +111,6 @@ fn reject() void = {
 
 		"fn f() void = { size(*never); };",
 
-		// non-prototype declarations with unnamed parameters
-		"fn f(_: int) void = void;",
-		"fn f(_: *int) void = void;",
-		"type t = void; fn f(_: t) void = void;",
-
 		// variadic call to a function that does not support that
 		"fn a(x: int) void = void; fn b() void = { a(5...); };",
 		"fn a(x: int, ...) void = void; fn b() void = { a(5...); };",
