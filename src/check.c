@@ -4231,7 +4231,7 @@ end:
 	});
 }
 
-void
+static void
 resolve_function(struct context *ctx, struct scope_object *obj)
 {
 	const struct ast_function_decl *decl = &obj->idecl->decl.function;
@@ -4251,7 +4251,7 @@ resolve_function(struct context *ctx, struct scope_object *obj)
 	obj->type = fntype;
 }
 
-void
+static void
 resolve_global(struct context *ctx, struct scope_object *obj)
 {
 	const struct ast_global_decl *decl = &obj->idecl->decl.global;
@@ -4406,7 +4406,7 @@ resolve_enum_field(struct context *ctx, struct scope_object *obj)
 	obj->otype = O_CONST;
 }
 
-const struct type *
+static const struct type *
 lookup_enum_type(struct context *ctx, const struct scope_object *obj)
 {
 	const struct type *enum_type = NULL;
@@ -4789,7 +4789,7 @@ load_import(struct context *ctx, const struct ast_global_decl *defines,
 		return;
 	}
 
-	struct ident *prefix;
+	struct ident *prefix = NULL;
 	switch (import->mode) {
 	case IMPORT_NORMAL:
 		prefix = intern_name(ctx->itbl, import->ident->name);
@@ -4801,7 +4801,7 @@ load_import(struct context *ctx, const struct ast_global_decl *defines,
 		prefix = NULL;
 		break;
 	case IMPORT_MEMBERS:
-		assert(0); // Unreachable
+		abort(); // Unreachable
 	}
 
 	for (const struct scope_object *obj = mod->objects;
