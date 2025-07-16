@@ -254,26 +254,20 @@ parse_imports(struct lexer *lexer, struct ast_subunit *subunit)
 static void
 parse_parameter_list(struct lexer *lexer, struct ast_function_type *type)
 {
-	struct token tok = {0}, tok2 = {0};
+	struct token tok = {0};
 	want(lexer, T_LPAREN, NULL);
 	type->params = mkfuncparams(lexer->loc);
 	struct ast_function_parameters **next = &type->params;
 	for (;;) {
 		switch (lex(lexer, &tok)) {
 		case T_NAME:;
-			switch (lex(lexer, &tok2)) {
-			case T_COLON:
-				(*next)->name = intern_name(lexer->itbl, tok.name);
-				(*next)->type = parse_type(lexer);
-				break;
-			default:
-				unlex(lexer, &tok2);
-				(*next)->type = mktype(tok.loc);
-				(*next)->type->storage = STORAGE_ALIAS;
-				(*next)->type->alias = parse_identifier(lexer,
-					tok.name, NULL);
-				break;
-			}
+			(*next)->name = intern_name(lexer->itbl, tok.name);
+			want(lexer, T_COLON, NULL);
+			(*next)->type = parse_type(lexer);
+			break;
+		case T_UNDERSCORE:
+			want(lexer, T_COLON, NULL);
+			(*next)->type = parse_type(lexer);
 			break;
 		case T_ELLIPSIS:
 			free(*next);
