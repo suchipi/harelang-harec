@@ -35,7 +35,7 @@ fn alias_array() void = {
 	assert(d[2] == 3, "array ptr ptr slice alias");
 };
 
-type my_fn = *const fn(int) int;
+type my_fn = *const fn(_: int) int;
 type my_fn_ptr = *my_fn;
 type my_fn_ptr_ptr = *my_fn_ptr;
 type my_fn_my_int = *const fn(_: my_int) int;

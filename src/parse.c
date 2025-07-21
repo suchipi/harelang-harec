@@ -280,9 +280,8 @@ parse_parameter_list(struct lexer *lexer, struct ast_function_type *type)
 			*next = NULL;
 			return;
 		default:
-			unlex(lexer, &tok);
-			(*next)->type = parse_type(lexer);
-			break;
+			synerr(&tok, T_NAME, T_UNDERSCORE, T_ELLIPSIS, T_RPAREN,
+				T_EOF);
 		}
 
 		switch (lex(lexer, &tok)) {
