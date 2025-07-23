@@ -266,6 +266,7 @@ parse_parameter_list(struct lexer *lexer, struct ast_function_type *type)
 			(*next)->type = parse_type(lexer);
 			break;
 		case T_UNDERSCORE:
+			(*next)->name = intern_name(lexer->itbl, "_");
 			want(lexer, T_COLON, NULL);
 			(*next)->type = parse_type(lexer);
 			break;

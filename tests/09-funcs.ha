@@ -185,6 +185,8 @@ fn zeroparamfunc(
 
 fn unnamedarg(_: str, x: int) int = 2 * x;
 
+fn unnamedargs(_: str, _: int, x: int) int = 2 * x;
+
 fn zerosizeparams() void = {
 	zeroparamfunc(1, void, "2", [], 3.0, zerostruct { ... },
 		zerounion { ... }, &4, (void, void), 5);
@@ -264,6 +266,7 @@ export fn main() void = {
 	vaargs();
 	cvaargs();
 	assert(unnamedarg("unused", 5) == 10);
+	assert(unnamedargs("unused", 10, 5) == 10);
 	zerosizeparams();
 	reject();
 	optional_params();

@@ -3826,10 +3826,8 @@ check_function(struct context *ctx,
 				&& !params->next) {
 			type = type_store_lookup_slice(ctx, params->loc, type);
 		}
-		if (params->name != NULL) {
-			scope_insert(decl->func.scope, O_BIND, params->name,
-					params->name, type, NULL);
-		}
+		scope_insert(decl->func.scope, O_BIND, params->name,
+				params->name, type, NULL);
 		params = params->next;
 	}
 
