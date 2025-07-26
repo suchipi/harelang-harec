@@ -2,6 +2,7 @@ use rt::{compile, status};
 
 type int_alias = int;
 type tagged_alias = (int | str);
+type tuple_alias = (str, int);
 
 type slice_alias = []int_alias;
 type array_alias = [4]int_alias;
@@ -168,6 +169,21 @@ fn foreach_tuple() ((str, int) | done) = {
 	return done;
 };
 
+fn foreach_tuple_alias() (tuple_alias  | done) = {
+	let pairs = [
+		("Hello", 1),
+		("World", 2),
+		("!", 3),
+	];
+	static let counter = 0;
+
+	if (counter < 3) {
+		counter += 1;
+		return pairs[counter - 1];
+	};
+	return done;
+};
+
 fn foreach_large() ([1024]int | done) = {
 	static let counter = 0;
 	if (counter < 4) {
@@ -312,6 +328,14 @@ fn for_each() void = {
 
 	let counter = 0;
 	for (let (string, count) => foreach_tuple()) {
+		assert(string == pairs[counter].0);
+		assert(count == pairs[counter].1);
+		counter += 1;
+	};
+	assert(counter == 3);
+
+	let counter = 0;
+	for (let (string, count) => foreach_tuple_alias()) {
 		assert(string == pairs[counter].0);
 		assert(count == pairs[counter].1);
 		counter += 1;

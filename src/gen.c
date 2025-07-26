@@ -2290,12 +2290,12 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 
 		if (unpack != NULL) {
 			const struct type_tagged_union *tagged = &initializer_type->tagged;
-			if  (tagged->type->storage == STORAGE_TUPLE) {
-				var_type = tagged->type;
+			if  (type_dealias(NULL, tagged->type)->storage == STORAGE_TUPLE) {
+				var_type = type_dealias(NULL, tagged->type);
 			} else {
-				var_type = tagged->next->type;
-				assert(var_type->storage == STORAGE_TUPLE);
+				var_type = type_dealias(NULL, tagged->next->type);
 			}
+			assert(var_type->storage == STORAGE_TUPLE);
 		} else {
 			var_type = expr->_for.bindings->binding.object->type;
 		}
