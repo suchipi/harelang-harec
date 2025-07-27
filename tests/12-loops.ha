@@ -169,7 +169,7 @@ fn foreach_tuple() ((str, int) | done) = {
 	return done;
 };
 
-fn foreach_tuple_alias() (tuple_alias  | done) = {
+fn foreach_tuple_alias() (tuple_alias | done) = {
 	let pairs = [
 		("Hello", 1),
 		("World", 2),
