@@ -7,8 +7,6 @@ fn padding() void = {
 	assert(align(struct { x: i32, y: i32 }) == 4);
 	assert(align(struct { x: i32, y: i64 }) == 8);
 	assert(align(union { x: i8, y: i16, z: i32 }) == 4);
-	assert(size(struct { x: i32, _: i32 }) == 8);
-	assert(size(union { x: i8, y: i16, _: i32 }) == 4);
 
 	const s = struct {
 		x: i8 = 10,
@@ -152,23 +150,13 @@ fn nested() void = {
 	compile(status::CHECK, "let z = s { a::b { x = y } };")!;
 };
 
-type coords = struct { x: int, y: int };
+type coords = struct { @offset(0) x: int, @offset(4) y: int };
 
 type coords3 = struct { coords, z: int };
 type embed = struct { a: uint, b: u8 };
 type _enum = enum { A = -1, B, C };
 // complex embedded hierarchy
-type me = struct {
-	embed,
-	coords3,
-	_: [4]u8,
-	v: void,
-	f: int,
-	g: (int, str),
-	h: _enum,
-	p: nullable *int,
-};
-
+type me = struct { embed, coords3, @offset(24) v: void, f: int, g: (int, str), h: _enum, p: nullable *int };
 let g1: me = me {        b = 4, x = -1, y = -2, z = -3, f = 20, ... };
 let g2: me = me {               x = -1, y = -2, z = -3, f = 20, ... };
 let g3: me = me {                       y = -2, z = -3, f = 20, ... };
@@ -189,21 +177,6 @@ type offset_test = struct {
 	e: size,
 	f: void,
 	g: [0]int,
-};
-
-type padding_embed = struct {
-	_: u32,
-	a: u32,
-	_: u32,
-};
-
-type padding_test = struct {
-	padding_embed,
-	_: u32,
-	x: u32,
-	_: void,
-	_: u32,
-	y: u32,
 };
 
 fn _offset() void = {
@@ -229,11 +202,6 @@ fn _offset() void = {
 	assert(offset(x.f) == 24);
 	assert(offset(x.g) == 24);
 	assert(size(offset_test) == 24);
-
-	let x = padding_test { ... };
-	assert(offset(x.a) == 4);
-	assert(offset(x.x) == 16);
-	assert(offset(x.y) == 24);
 };
 
 fn autofill() void = {
@@ -354,6 +322,13 @@ fn invariants() void = {
 	"type foo = struct { x: int, y: bar };"
 	"type bar = enum { A = 1, B, C = -1 };"
 	"fn test() void = { let x = foo { x = 0, ... }; };",
+
+	// Invalid @offsets
+	"type foo = struct { @offset(4) x: int, @offset(0) y: int };",
+
+	"type foo = struct { x: u64, @offset(4) y: u32 };",
+
+	"type foo = union { x: u32, @offset(4) y: u32 };",
 
 	// @packed union
 	"type foo = union @packed { x: u32, y: str };",

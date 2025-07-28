@@ -85,7 +85,8 @@ struct ast_tuple_type {
 
 struct ast_struct_union_field {
 	struct ast_struct_union_field *next;
-	const char *name; // null if embed, may be "_"
+	struct ast_expression *offset;
+	const char *name;
 	struct ast_type *type;
 };
 

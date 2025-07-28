@@ -11,6 +11,7 @@
 enum lexical_token {
 	T_ATTR_FINI,
 	T_ATTR_INIT,
+	T_ATTR_OFFSET,
 	T_ATTR_PACKED,
 	T_ATTR_SYMBOL,
 	T_ATTR_TEST,

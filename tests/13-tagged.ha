@@ -29,12 +29,12 @@ fn storage() void = {
 	static assert(align(u32) == 4 && align(u64) == 8); // XXX
 	const y = &x: *struct {
 		tag: u32,
-		union {
+		@offset(4) union {
 			_u8: u8,
 			_u16: u16,
 			_u32: u32,
 		},
-		_u64: u64,
+		@offset(8) _u64: u64,
 	};
 	assert(offset(y._u8) == 4);
 	assert(offset(y._u16) == 4);
@@ -160,8 +160,8 @@ fn subsetcast() void = {
 	let y: (size | int | void) = x;
 	let p = &y: *struct {
 		tag: u32,
-		i: i32,
-		z: size,
+		@offset(4) i: int,
+		@offset(8) z: size,
 	};
 	assert(p.tag == size_tag);
 	assert(p.z == 1337z);
@@ -177,8 +177,8 @@ fn subsetcast() void = {
 	let y: (size | int | void) = x;
 	let p = &y: *struct {
 		tag: u32,
-		i: i32,
-		z: size,
+		@offset(4) i: int,
+		@offset(8) z: size,
 	};
 	assert(p.tag == int_tag);
 	assert(p.i == 1337);
