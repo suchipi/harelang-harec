@@ -2662,7 +2662,7 @@ gen_nested_match_tests(struct gen_context *ctx, struct gen_value object,
 		if (type_dealias(NULL, type)->storage != STORAGE_TAGGED) {
 			break;
 		}
-		test = tagged_select_subtype(NULL, type, subtype, false);
+		test = tagged_select_subtype(NULL, type, subtype, true);
 		if (!test) {
 			break;
 		}

@@ -98,11 +98,17 @@ fn reduction() void = {
 	assert(i is int);
 };
 
+type err = void;
+
 fn casts() void = {
 	let a: (u8 | u16) = 42u16;
 	assert(a as u16 == 42);
 	let x = a: u8;
 	assert(x == 42);
+
+	let b: (void | !err) = err;
+	assert(b is err);
+	assert(b is !err);
 
 	const val = 0xBEEFu16;
 	const is_little = (&val: *[2]u8)[0] == 0xEF;
