@@ -42,3 +42,13 @@ static assert(SIZE_RT_SLICE == size([]opaque));
 
 // ensure this produces valid code in a typedef
 export def ptr: *int = null: *int;
+
+// used for a test in tests/06-structs.ha
+export type padding_embed = struct {
+	_: u32,
+	a: union {
+		b: u32,
+		c: i32,
+	},
+	_: u32,
+};

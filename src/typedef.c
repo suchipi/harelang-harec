@@ -214,9 +214,6 @@ emit_struct(const struct type *type, FILE *out)
 			type->struct_union.packed ? "@packed " : "");
 	for (const struct struct_field *f = type->struct_union.fields;
 			f; f = f->next) {
-		if (!type->struct_union.c_compat) {
-			xfprintf(out, "@offset(%zu) ", f->offset);
-		}
 		if (f->name) {
 			xfprintf(out, "%s: ", f->name);
 		}

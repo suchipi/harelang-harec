@@ -151,7 +151,8 @@ struct_new_field(struct context *ctx, struct type *type,
 	const struct ast_struct_union_field *afield,
 	size_t *offset, bool size_only)
 {
-	if (afield->name != NULL && !size_only) {
+	bool named = afield->name != NULL && strcmp(afield->name, "_") != 0;
+	if (named && !size_only) {
 		if (struct_union_has_field(ctx, afield->name, type->struct_union.fields)) {
 			error(ctx, afield->type->loc, NULL,
 				"Duplicate struct/union member '%s'",
@@ -186,10 +187,6 @@ struct_new_field(struct context *ctx, struct type *type,
 	field->size = dim.size;
 
 	if (type->storage == STORAGE_UNION) {
-		if (afield->offset) {
-			error(ctx, afield->type->loc, NULL,
-				"Union fields cannot be given explicit offset");
-		}
 		field->offset = 0;
 		if (dim.size == SIZE_UNDEFINED || type->size == SIZE_UNDEFINED) {
 			type->size = SIZE_UNDEFINED;
@@ -199,35 +196,7 @@ struct_new_field(struct context *ctx, struct type *type,
 		return field;
 	}
 
-	if (afield->offset) {
-		type->struct_union.c_compat = false;
-		bool err = true;
-		struct expression in, out;
-		check_expression(ctx, afield->offset, &in, NULL);
-		field->offset = *offset;
-		if (!eval_expr(ctx, &in, &out)) {
-			error(ctx, in.loc, NULL,
-				"Cannot evaluate field offset at compile time");
-		} else if (!type_is_integer(ctx, out.result)) {
-			error(ctx, in.loc, NULL,
-				"Field offset must be an integer");
-		} else if (type_is_signed(ctx, out.result) && out.literal.ival < 0) {
-			error(ctx, in.loc, NULL,
-				"Field offset must not be less than 0");
-		} else if (out.literal.uval < *offset) {
-			error(ctx, in.loc, NULL,
-				"Field offset must be greater than or equal to previous field's offset");
-		} else if (out.literal.uval < type->size) {
-			error(ctx, in.loc, NULL,
-				"Fields must not have overlapping storage");
-		} else {
-			err = false;
-			field->offset = *offset = (size_t)out.literal.uval;
-		}
-		if (err) {
-			return NULL;
-		}
-	} else if (type->struct_union.packed) {
+	if (type->struct_union.packed) {
 		field->offset = *offset = type->size;
 	} else {
 		*offset = type->size;
@@ -304,7 +273,6 @@ shift_fields(struct context *ctx,
 		.flags = type->flags,
 		.size = type->size,
 		.align = type->align,
-		.struct_union.c_compat = type->struct_union.c_compat,
 		.struct_union.packed = type->struct_union.packed,
 	};
 	struct struct_field **next = &new.struct_union.fields;
@@ -340,7 +308,6 @@ struct_init_from_atype(struct context *ctx, struct type *type,
 		return false;
 	}
 	type->struct_union.packed = atype->struct_union.packed;
-	type->struct_union.c_compat = !atype->struct_union.packed;
 
 	size_t offset = 0;
 	assert(type->storage == STORAGE_STRUCT || type->storage == STORAGE_UNION);

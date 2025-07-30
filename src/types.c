@@ -98,6 +98,7 @@ type_get_field(struct context *ctx, const struct type *type, const char *name)
 	}
 	assert(type->storage == STORAGE_STRUCT
 			|| type->storage == STORAGE_UNION);
+	assert(strcmp(name, "_") != 0);
 	struct struct_field *field = type->struct_union.fields;
 	while (field) {
 		if (field->name) {

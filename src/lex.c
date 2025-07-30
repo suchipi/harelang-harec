@@ -18,7 +18,6 @@ static const char *tokens[] = {
 	// Must match enum lexical_token (lex.h)
 	[T_ATTR_FINI] = "@fini",
 	[T_ATTR_INIT] = "@init",
-	[T_ATTR_OFFSET] = "@offset",
 	[T_ATTR_PACKED] = "@packed",
 	[T_ATTR_SYMBOL] = "@symbol",
 	[T_ATTR_TEST] = "@test",

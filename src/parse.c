@@ -503,15 +503,12 @@ parse_struct_union_type(struct lexer *lexer)
 	}
 	want(lexer, T_LBRACE, NULL);
 	while (tok.token != T_RBRACE) {
-		if (lex(lexer, &tok) == T_ATTR_OFFSET) {
-			want(lexer, T_LPAREN, NULL);
-			next->offset = parse_expression(lexer);
-			want(lexer, T_RPAREN, NULL);
-		} else {
-			unlex(lexer, &tok);
-		}
-
 		switch (lex(lexer, &tok)) {
+		case T_UNDERSCORE:
+			want(lexer, T_COLON, NULL);
+			next->name = "_";
+			next->type = parse_type(lexer);
+			break;
 		case T_NAME:;
 			const char *name = tok.name;
 			struct location loc = tok.loc;
@@ -536,7 +533,7 @@ parse_struct_union_type(struct lexer *lexer)
 			next->type = parse_type(lexer);
 			break;
 		default:
-			synerr(&tok, T_NAME, T_STRUCT, T_UNION, T_EOF);
+			synerr(&tok, T_NAME, T_UNDERSCORE, T_STRUCT, T_UNION, T_EOF);
 		}
 		switch (lex(lexer, &tok)) {
 		case T_COMMA:
