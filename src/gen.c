@@ -870,6 +870,11 @@ gen_expr_assign(struct gen_context *ctx, const struct expression *expr)
 {
 	struct expression *object = expr->assign.object;
 	struct expression *value = expr->assign.value;
+
+	if (object == NULL) {
+		gen_expr(ctx, value);
+		return;
+	}
 	if (object->type == EXPR_SLICE) {
 		gen_expr_assign_slice(ctx, expr);
 		return;
@@ -1075,6 +1080,9 @@ gen_expr_binding(struct gen_context *ctx, const struct expression *expr)
 			} else {
 				gen_expr_binding_unpack(ctx, binding);
 			}
+			continue;
+		} else if (binding->object == NULL) {
+			gen_expr(ctx, binding->initializer);
 			continue;
 		}
 
@@ -2137,13 +2145,20 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 
 	enum for_kind kind = expr->_for.kind;
 
+	const struct expression_binding *binding = NULL;
+	bool named_binding = false;
+	if (expr->_for.bindings != NULL) {
+		binding = &expr->_for.bindings->binding;
+		named_binding = binding->object != NULL
+			|| binding->unpack != NULL;
+	}
+
 	if (kind == FOR_ACCUMULATOR && expr->_for.bindings != NULL) {
 		gen_expr_binding(ctx, expr->_for.bindings);
 	}
 
 	if (kind == FOR_EACH_VALUE || kind == FOR_EACH_POINTER) {
-		ginitializer = gen_autoderef_expr(ctx,
-				expr->_for.bindings->binding.initializer);
+		ginitializer = gen_autoderef_expr(ctx, binding->initializer);
 		qinitializer = mklval(ctx, &ginitializer);
 
 		const struct type *initializer_type = type_dealias(NULL,
@@ -2151,37 +2166,41 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 
 		const struct type *var_type = initializer_type->array.members;
 
-		if (kind == FOR_EACH_POINTER) {
-			var_type = type_dealias(NULL,
-				expr->_for.bindings->binding.object->type);
+		if (named_binding) {
+			if (kind == FOR_EACH_POINTER) {
+				var_type = type_dealias(NULL,
+					binding->object->type);
+			}
+
+			gcur_object = mkgtemp(ctx, var_type, "cur_object.%d");
+			qcur_object = mklval(ctx, &gcur_object);
+
+			struct qbe_value qcur_object_sz = constl(var_type->size);
+			enum qbe_instr alloc = alloc_for_align(var_type->align);
+			pushprei(ctx->current, &qcur_object, alloc, &qcur_object_sz, NULL);
 		}
 
-		gcur_object = mkgtemp(ctx, var_type, "cur_object.%d");
-		qcur_object = mklval(ctx, &gcur_object);
-
-		struct qbe_value qcur_object_sz = constl(var_type->size);
-		enum qbe_instr alloc = alloc_for_align(var_type->align);
-		pushprei(ctx->current, &qcur_object, alloc, &qcur_object_sz, NULL);
-
-		if (initializer_type->storage == STORAGE_ARRAY) {
-			gptr = mkgtemp(ctx, var_type, ".%d");
-			qptr = mklval(ctx, &gptr);
-
-			pushi(ctx->current, &qptr, Q_COPY, &qinitializer, NULL);
-			qlength = constl(initializer_type->array.length);
-		} else {
-			assert(initializer_type->storage == STORAGE_SLICE);
+		qlength = constl(initializer_type->array.length);
+		assert(initializer_type->storage == STORAGE_ARRAY
+			|| initializer_type->storage == STORAGE_SLICE);
+		if (initializer_type->storage == STORAGE_SLICE) {
 			qlength = mkqtmp(ctx, ctx->arch.ptr, "len.%d");
-
 			struct gen_slice slice = gen_slice_ptrs(ctx,
 				ginitializer);
-			load_slice_data(ctx, &slice, &qptr, &qlength, NULL);
-
-			gptr = (struct gen_value){
-				.kind = GV_TEMP,
-				.type = var_type,
-				.name = qptr.name
-			};
+			if (named_binding) {
+				load_slice_data(ctx, &slice, &qptr, &qlength, NULL);
+				gptr = (struct gen_value){
+					.kind = GV_TEMP,
+					.type = var_type,
+					.name = qptr.name
+				};
+			} else {
+				load_slice_data(ctx, &slice, NULL, &qlength, NULL);
+			}
+		} else if (named_binding) {
+			gptr = mkgtemp(ctx, var_type, ".%d");
+			qptr = mklval(ctx, &gptr);
+			pushi(ctx->current, &qptr, Q_COPY, &qinitializer, NULL);
 		}
 
 		struct qbe_value qzero = constl(0);
@@ -2204,9 +2223,8 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		pushi(ctx->current, NULL, Q_JNZ, &qvalid, &bvalid, &bend, NULL);
 		push(&ctx->current->body, &lvalid);
 
-		if (expr->_for.bindings->binding.unpack == NULL) {
-			struct expression_binding *binding =
-				&expr->_for.bindings->binding;
+		if (binding->object != NULL) {
+			assert(binding->unpack == NULL);
 			if (type_dealias(NULL, binding->object->type)->size != 0) {
 				struct gen_binding *gb =
 					xcalloc(1, sizeof(struct gen_binding));
@@ -2217,41 +2235,35 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 			}
 		}
 
-		if (kind == FOR_EACH_VALUE) {
-			gen_store(ctx, gcur_object, gen_load(ctx, gptr));
-
-			struct binding_unpack *unpack =
-				expr->_for.bindings->binding.unpack;
-			if (unpack != NULL) {
-				for (struct binding_unpack *cur_unpack = unpack;
-						cur_unpack;
-						cur_unpack = cur_unpack->next) {
-					if (cur_unpack->object->type->size == 0) {
-						continue;
-					}
-					struct gen_binding *gb = xcalloc(1,
-						sizeof(struct gen_binding));
-
-					gb->value = mkgtemp(ctx,
-						cur_unpack->object->type,
-						"unpack.%d");
-					gb->object = cur_unpack->object;
-					gb->next = ctx->bindings;
-					ctx->bindings = gb;
-
-					struct qbe_value qoff =
-						constl(cur_unpack->offset);
-					struct qbe_value qitem = mklval(ctx,
-						&gb->value);
-					pushi(ctx->current, &qitem, Q_ADD,
-						&qcur_object, &qoff, NULL);
-				}
-			}
-		} else { // FOR_EACH_POINTER
+		if (kind == FOR_EACH_POINTER && binding->object != NULL) {
 			enum qbe_instr store = store_for_type(ctx,
 				gcur_object.type);
 			pushi(ctx->current, NULL, store, &qptr,
 				&qcur_object, NULL);
+		} else if (binding->unpack != NULL) { // FOR_EACH_VALUE
+			gen_store(ctx, gcur_object, gen_load(ctx, gptr));
+
+			for (struct binding_unpack *cur_unpack = binding->unpack;
+					cur_unpack; cur_unpack = cur_unpack->next) {
+				if (cur_unpack->object->type->size == 0) {
+					continue;
+				}
+				struct gen_binding *gb = xcalloc(1,
+					sizeof(struct gen_binding));
+
+				gb->value = mkgtemp(ctx, cur_unpack->object->type,
+					"unpack.%d");
+				gb->object = cur_unpack->object;
+				gb->next = ctx->bindings;
+				ctx->bindings = gb;
+
+				struct qbe_value qoff = constl(cur_unpack->offset);
+				struct qbe_value qitem = mklval(ctx, &gb->value);
+				pushi(ctx->current, &qitem, Q_ADD,
+					&qcur_object, &qoff, NULL);
+			}
+		} else if (binding->object != NULL) { // FOR_EACH_VALUE
+			gen_store(ctx, gcur_object, gen_load(ctx, gptr));
 		}
 
 		struct qbe_value qone = constl(1);
@@ -2259,8 +2271,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		break;
 	}
 	case FOR_EACH_ITERATOR:
-		ginitializer = gen_expr(ctx,
-			expr->_for.bindings->binding.initializer);
+		ginitializer = gen_expr(ctx, binding->initializer);
 		qinitializer = mklval(ctx, &ginitializer);
 
 		const struct type *initializer_type = type_dealias(NULL,
@@ -2277,6 +2288,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 				break;
 			}
 		}
+		assert(done_type != NULL);
 
 		struct qbe_value qdone_tag = constw(done_type->id);
 		struct qbe_value qisdone = mkqtmp(ctx, &qbe_word, ".%d");
@@ -2285,10 +2297,8 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		pushi(ctx->current, NULL, Q_JNZ, &qisdone, &bend, &bvalid, NULL);
 		push(&ctx->current->body, &lvalid);
 
-		struct binding_unpack *unpack = expr->_for.bindings->binding.unpack;
-		const struct type *var_type;
-
-		if (unpack != NULL) {
+		const struct type *var_type = NULL;
+		if (binding->unpack != NULL) {
 			const struct type_tagged_union *tagged = &initializer_type->tagged;
 			if  (type_dealias(NULL, tagged->type)->storage == STORAGE_TUPLE) {
 				var_type = type_dealias(NULL, tagged->type);
@@ -2296,22 +2306,21 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 				var_type = type_dealias(NULL, tagged->next->type);
 			}
 			assert(var_type->storage == STORAGE_TUPLE);
-		} else {
-			var_type = expr->_for.bindings->binding.object->type;
+		} else if (binding->object != NULL) {
+			var_type = binding->object->type;
 		}
 
 		struct qbe_value qptr = qinitializer;
-		if (var_type->storage != STORAGE_TAGGED) {
+		if (var_type != NULL && var_type->storage != STORAGE_TAGGED) {
 			qptr = mkqtmp(ctx, ctx->arch.ptr, "cur_val.%d");
 			struct qbe_value qoffset = nested_tagged_offset(
 				ginitializer.type, var_type);
 			pushi(ctx->current, &qptr, Q_ADD, &qinitializer, &qoffset, NULL);
 		}
 
-		if (unpack != NULL) {
-			for (struct binding_unpack *cur_unpack = unpack;
-					cur_unpack;
-					cur_unpack = cur_unpack->next) {
+		if (binding->unpack != NULL) {
+			for (struct binding_unpack *cur_unpack = binding->unpack;
+					cur_unpack; cur_unpack = cur_unpack->next) {
 				if (cur_unpack->object->type->size == 0) {
 					continue;
 				}
@@ -2329,26 +2338,21 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 				pushi(ctx->current, &qitem, Q_ADD,
 					&qptr, &qoff, NULL);
 			}
-		} else {
-			struct expression_binding *binding =
-				&expr->_for.bindings->binding;
+		} else if (binding->object != NULL
+				&& binding->object->type->size != 0) {
+			struct gen_binding *gb =
+				xcalloc(1, sizeof(struct gen_binding));
 
-			if (binding->object->type->size != 0) {
-				struct gen_binding *gb =
-					xcalloc(1, sizeof(struct gen_binding));
-
-				gb->object = binding->object;
-				gb->value = (struct gen_value) {
-					.kind = GV_TEMP,
-					.type = binding->object->type,
-					.name = qptr.name,
-				};
-				gb->next = ctx->bindings;
-				ctx->bindings = gb;
-			}
+			gb->object = binding->object;
+			gb->value = (struct gen_value) {
+				.kind = GV_TEMP,
+				.type = binding->object->type,
+				.name = qptr.name,
+			};
+			gb->next = ctx->bindings;
+			ctx->bindings = gb;
 		}
 		break;
-
 	case FOR_ACCUMULATOR: {
 		struct gen_value cond = gen_expr(ctx, expr->_for.cond);
 		struct qbe_value qcond = mkqval(ctx, &cond);
@@ -2363,7 +2367,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 	if (expr->_for.afterthought) {
 		gen_expr(ctx, expr->_for.afterthought);
 	}
-	if (kind == FOR_EACH_VALUE || kind == FOR_EACH_POINTER) {
+	if ((kind == FOR_EACH_VALUE || kind == FOR_EACH_POINTER) && named_binding) {
 		struct qbe_value qmember_sz = constl(
 			type_dealias(NULL, ginitializer.type)->array.members->size);
 		pushi(ctx->current, &qptr, Q_ADD, &qptr, &qmember_sz, NULL);

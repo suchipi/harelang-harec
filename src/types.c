@@ -551,9 +551,6 @@ tagged_select_subtype(struct context *ctx, const struct type *tagged,
 			return tu->type;
 		}
 
-		if (type_dealias(ctx, tu->type)->storage == STORAGE_VOID) {
-			continue;
-		}
 		if (type_is_assignable(ctx, tu->type, subtype)) {
 			selected = tu->type;
 			++nassign;
@@ -1005,12 +1002,7 @@ is_castable_with_tagged(struct context *ctx,
 const struct type *
 type_is_castable(struct context *ctx, const struct type *to, const struct type *from)
 {
-	if (to->storage == STORAGE_VOID) {
-		if (type_is_flexible(from)) {
-			lower_flexible(ctx, from, NULL);
-		}
-		return to;
-	} else if (to->storage == STORAGE_ERROR) {
+	if (to->storage == STORAGE_ERROR) {
 		return to;
 	}
 

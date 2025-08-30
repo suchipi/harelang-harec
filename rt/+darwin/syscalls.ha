@@ -13,7 +13,9 @@ export fn write(fd: int, buf: *const opaque, count: size) size =
 	syscall3(SYS_write, fd: u64, buf: uintptr: u64, count: u64): size;
 
 // export fn close(fd: int) int = syscall1(SYS_close, fd: u64): int;
-export fn close(fd: int) void = syscall1(SYS_close, fd: u64): void;
+export fn close(fd: int) void = {
+	syscall1(SYS_close, fd: u64);
+};
 
 export fn dup2(old: int, new: int) int =
 	syscall2(SYS_dup2,  old: u64, new: u64): int;
