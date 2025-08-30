@@ -239,6 +239,9 @@ check_embedded_member(struct context *ctx,
 	for (struct struct_field *field = dealiased->struct_union.fields;
 			field; field = field->next) {
 		if (field->name != NULL) {
+			if (strcmp(field->name, "_") == 0) {
+				continue;
+			}
 			if (struct_union_has_field(ctx, field->name, fields)) {
 				// XXX: the location could be better
 				error(ctx, afield->type->loc, NULL,

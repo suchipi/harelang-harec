@@ -521,6 +521,11 @@ fn rt_siginfo() void = {
 	assert(offset(si.si_uid) == 20);
 };
 
+export type embedded_underscores = struct {
+	union { struct { _: u32 }, },
+	union { struct { _: u32 }, },
+};
+
 export fn main() void = {
 	padding();
 	storage();
