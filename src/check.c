@@ -2202,15 +2202,15 @@ check_expr_for_each(struct context *ctx,
 	if (var_type == NULL) {
 		var_type = initializer_result;
 	}
+	if (var_type->size == SIZE_UNDEFINED) {
+		error(ctx, abinding->initializer->loc, binding,
+			"Cannot create binding of undefined size");
+		// error is recoverable
+	}
 	if (abinding->unpack != NULL) {
 		create_unpack_bindings(ctx, var_type, initializer->loc,
 			abinding->unpack, abinding->is_static, binding);
 	} else {
-		if (var_type->size == SIZE_UNDEFINED) {
-			error(ctx, abinding->initializer->loc, binding,
-				"Cannot create binding of undefined size");
-			return;
-		}
 		binding->binding.object = scope_insert(ctx->scope, O_BIND,
 			abinding->name, abinding->name, var_type, NULL);
 	}
