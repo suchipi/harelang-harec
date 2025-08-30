@@ -2174,7 +2174,9 @@ parse_binding_list(struct lexer *lexer, bool is_static)
 			binding->name = intern_name(lexer->itbl, tok.name);
 			break;
 		case T_LPAREN:
-			synassert(exp->type == EXPR_BINDING, &tok, T_NAME, T_EOF);
+			if (exp->type != EXPR_BINDING) {
+				error(tok.loc, "can't use tuple unpacking to declare constant");
+			}
 			parse_binding_unpack(lexer, &binding->unpack);
 			break;
 		default:
