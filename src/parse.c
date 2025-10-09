@@ -413,7 +413,7 @@ parse_primitive_type(struct lexer *lexer)
 }
 
 static void parse_binding_unpack(struct lexer *lexer,
-	 struct ast_binding_names *next);
+	 struct ast_binding_unpack **next);
 static struct ast_expression *parse_binding_list(
 		struct lexer *lexer, bool is_static);
 static struct ast_expression *parse_object_selector(struct lexer *lexer);
@@ -1797,17 +1797,13 @@ static void parse_for_predicate(struct lexer *lexer,
 		while (true) {
 			switch (lex(lexer, &tok)) {
 			case T_NAME:
-				binding->names.name =
-					intern_name(lexer->itbl, tok.name);
-				break;
-			case T_UNDERSCORE:
+				binding->name = intern_name(lexer->itbl, tok.name);
 				break;
 			case T_LPAREN:
-				parse_binding_unpack(lexer, &binding->names);
+				parse_binding_unpack(lexer, &binding->unpack);
 				break;
 			default:
-				synerr(&tok, T_NAME, T_UNDERSCORE,
-					T_LPAREN, T_EOF);
+				synerr(&tok, T_NAME, T_LPAREN, T_EOF);
 			}
 
 			if (lex(lexer, &tok) == T_COLON) {
@@ -2123,13 +2119,17 @@ parse_match_expression(struct lexer *lexer)
 }
 
 static void
-parse_binding_unpack(struct lexer *lexer, struct ast_binding_names *next)
+parse_binding_unpack(struct lexer *lexer, struct ast_binding_unpack **next)
 {
 	struct token tok;
 	while (true) {
+		struct ast_binding_unpack *new = xcalloc(1, sizeof *new);
+		*next = new;
+		next = &new->next;
+
 		switch (lex(lexer, &tok)) {
 		case T_NAME:
-			next->name = intern_name(lexer->itbl, tok.name);
+			new->name = intern_name(lexer->itbl, tok.name);
 			break;
 		case T_UNDERSCORE:
 			break;
@@ -2139,9 +2139,6 @@ parse_binding_unpack(struct lexer *lexer, struct ast_binding_names *next)
 
 		switch (lex(lexer, &tok)) {
 		case T_COMMA:
-			next->next = xcalloc(1,
-				sizeof(struct ast_binding_names));
-			next = next->next;
 			break;
 		case T_RPAREN:
 			return;
@@ -2174,22 +2171,16 @@ parse_binding_list(struct lexer *lexer, bool is_static)
 	do {
 		switch (lex(lexer, &tok)) {
 		case T_NAME:
-			binding->names.name =
-				intern_name(lexer->itbl, tok.name);
-			break;
-		case T_UNDERSCORE:
-			if (exp->type != EXPR_BINDING) {
-				error(tok.loc, "can't use underscore with def");
-			}
+			binding->name = intern_name(lexer->itbl, tok.name);
 			break;
 		case T_LPAREN:
 			if (exp->type != EXPR_BINDING) {
 				error(tok.loc, "can't use tuple unpacking to declare constant");
 			}
-			parse_binding_unpack(lexer, &binding->names);
+			parse_binding_unpack(lexer, &binding->unpack);
 			break;
 		default:
-			synerr(&tok, T_NAME, T_UNDERSCORE, T_LPAREN, T_EOF);
+			synerr(&tok, T_NAME, T_LPAREN, T_EOF);
 		}
 		binding->is_static = is_static;
 
@@ -2382,9 +2373,6 @@ parse_expression(struct lexer *lexer)
 		return parse_for_expression(lexer);
 	case T_IF:
 		return parse_if_expression(lexer);
-	case T_UNDERSCORE:
-		want(lexer, T_EQUAL, NULL);
-		return parse_assignment(lexer, NULL, BIN_LEQUAL);
 	default:
 		break;
 	}

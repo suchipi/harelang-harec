@@ -47,47 +47,12 @@ fn cannotignore() void = {
 	compile(status::CHECK, "
 		type error = !void;
 
-		export fn main() void = {
+		export fn main() int = {
 			error;
-		};
-	")!;
-	compile(status::CHECK, "
-		type error = !int;
-
-		export fn main() void = {
-			let x: error = 0;
-			x;
-		};
-	")!;
-	compile(status::CHECK, "
-		type error = !int;
-
-		export fn main() void = {
-			let x: (error | void) = void;
-			x;
+			return 42;
 		};
 	")!;
 	err_if_false(true)!;
-};
-
-fn discard() void = {
-	let x: error = error;
-	let x: (int | error) = error;
-	let x = err_if_false(false);
-	x = error;
-	x = err_if_false(false);
-
-	// XXX: type inference currently doesn't work because of the temporary
-	// fix for https://todo.sr.ht/~sircmpwn/hare/951. once that ticket is
-	// actually fixed, the explicit type here can be removed
-	let _: error = error;
-	let _ = err_if_false(false);
-	_ = error;
-	_ = err_if_false(false);
-
-	for (let x => done: (int | done | !void)) void;
-	for (let _ => done: (int | done | !void)) void;
-	compile(status::CHECK, `fn f() void = for (let x => done: (int | done | !void)) x;`)!;
 };
 
 fn measurements() void = {
@@ -127,7 +92,6 @@ export fn main() void = {
 	assignability();
 	propagate();
 	cannotignore();
-	discard();
 	measurements();
 	disallowed_types();
 };

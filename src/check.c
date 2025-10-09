@@ -898,16 +898,8 @@ check_expr_assign(struct context *ctx,
 	expr->result = &builtin_type_void;
 	expr->assign.op = aexpr->assign.op;
 
-	struct expression *value = xcalloc(1, sizeof(struct expression));
-
-	if (aexpr->assign.object == NULL) {
-		assert(expr->assign.op == BIN_LEQUAL);
-		check_expression(ctx, aexpr->assign.value, value, NULL);
-		expr->assign.value = value;
-		return;
-	}
-
 	struct expression *object = xcalloc(1, sizeof(struct expression));
+	struct expression *value = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aexpr->assign.object, object, NULL);
 	check_expression(ctx, aexpr->assign.value, value, object->result);
 
@@ -1213,7 +1205,7 @@ static void
 create_unpack_bindings(struct context *ctx,
 	const struct type *type,
 	const struct location loc,
-	const struct ast_binding_names *names,
+	const struct ast_binding_unpack *aunpack,
 	bool is_static,
 	struct expression *expr)
 {
@@ -1229,13 +1221,13 @@ create_unpack_bindings(struct context *ctx,
 	struct binding_unpack *unpack = expr->binding.unpack;
 	const struct type_tuple *type_tuple = &type->tuple;
 
-	while (names != NULL && type_tuple != NULL) {
+	while (aunpack != NULL && type_tuple != NULL) {
 		if (type_tuple->type->size == SIZE_UNDEFINED) {
 			error(ctx, loc, expr,
 				"Cannot create binding of undefined size");
 			return;
 		}
-		if (names->name != NULL) {
+		if (aunpack->name != NULL) {
 			if (unpack->object != NULL) {
 				unpack->next = xcalloc(1,
 					sizeof(struct binding_unpack));
@@ -1245,16 +1237,16 @@ create_unpack_bindings(struct context *ctx,
 				// Generate a static declaration ident
 				unpack->object = scope_insert(ctx->scope, O_DECL,
 					intern_generated(ctx, "static.%d"),
-					names->name, type_tuple->type, NULL);
+					aunpack->name, type_tuple->type, NULL);
 			} else {
 				unpack->object = scope_insert(ctx->scope,
-					O_BIND, names->name, names->name,
+					O_BIND, aunpack->name, aunpack->name,
 					type_tuple->type, NULL);
 			}
 			unpack->offset = type_tuple->offset;
 		}
 
-		names = names->next;
+		aunpack = aunpack->next;
 		type_tuple = type_tuple->next;
 	}
 
@@ -1268,7 +1260,7 @@ create_unpack_bindings(struct context *ctx,
 			"Fewer bindings than tuple elements were provided when unpacking");
 		return;
 	}
-	if (names != NULL) {
+	if (aunpack != NULL) {
 		error(ctx, loc, expr,
 			"More bindings than tuple elements were provided when unpacking");
 		return;
@@ -1286,6 +1278,8 @@ check_expr_binding(struct context *ctx,
 	expr->result = &builtin_type_void;
 
 	struct expression_binding *binding = &expr->binding;
+	struct expression_binding **next = &expr->binding.next;
+
 	const struct ast_expression_binding *abinding = &aexpr->binding;
 	while (abinding) {
 		const struct type *type = NULL;
@@ -1333,11 +1327,8 @@ check_expr_binding(struct context *ctx,
 				type = &builtin_type_error;
 			}
 			binding->initializer = value;
-			assert(abinding->names.name != NULL);
-			assert(abinding->names.next == NULL);
 			binding->object = scope_insert(ctx->scope, O_CONST,
-				abinding->names.name, abinding->names.name,
-				NULL, value);
+				abinding->name, abinding->name, NULL, value);
 			goto done;
 		}
 		if (!type) {
@@ -1345,20 +1336,19 @@ check_expr_binding(struct context *ctx,
 			// XXX why is this needed?
 			type = type_store_lookup_with_flags(ctx, type, 0);
 		}
-		if (abinding->names.next != NULL) {
+		if (abinding->unpack != NULL) {
 			create_unpack_bindings(ctx, type,
-				abinding->initializer->loc, &abinding->names,
+				abinding->initializer->loc, abinding->unpack,
 				abinding->is_static, expr);
-		} else if (abinding->names.name != NULL) {
+		} else {
 			if (abinding->is_static) {
 				// Generate a static declaration ident
 				binding->object = scope_insert(ctx->scope, O_DECL,
 					intern_generated(ctx, "static.%d"),
-					abinding->names.name, type, NULL);
+					abinding->name, type, NULL);
 			} else {
 				binding->object = scope_insert(ctx->scope, O_BIND,
-					abinding->names.name, abinding->names.name,
-					type, NULL);
+					abinding->name, abinding->name, type, NULL);
 			}
 		}
 
@@ -1399,9 +1389,9 @@ check_expr_binding(struct context *ctx,
 
 done:
 		if (abinding->next) {
-			binding->next = xcalloc(1,
-				sizeof(struct expression_binding));
-			binding = binding->next;
+			binding = *next =
+				xcalloc(1, sizeof(struct expression_binding));
+			next = &binding->next;
 		}
 
 		abinding = abinding->next;
@@ -2143,7 +2133,7 @@ check_expr_for_each(struct context *ctx,
 
 	switch (expr->_for.kind) {
 	case FOR_EACH_POINTER:
-		if (abinding->names.next != NULL) {
+		if (abinding->unpack) {
 			error(ctx, abinding->initializer->loc, expr,
 				"Cannot unpack tuple by pointer in for-each loop");
 			return;
@@ -2217,12 +2207,12 @@ check_expr_for_each(struct context *ctx,
 			"Cannot create binding of undefined size");
 		// error is recoverable
 	}
-	if (abinding->names.next != NULL) {
+	if (abinding->unpack != NULL) {
 		create_unpack_bindings(ctx, var_type, initializer->loc,
-			&abinding->names, abinding->is_static, binding);
-	} else if (abinding->names.name != NULL) {
+			abinding->unpack, abinding->is_static, binding);
+	} else {
 		binding->binding.object = scope_insert(ctx->scope, O_BIND,
-			abinding->names.name, abinding->names.name, var_type, NULL);
+			abinding->name, abinding->name, var_type, NULL);
 	}
 
 	if (binding_type != NULL && !type_is_assignable(ctx, var_type, initializer_result)) {

@@ -166,7 +166,6 @@ struct ast_expression_assert {
 
 struct ast_expression_assign {
 	enum binarithm_operator op;
-	// object == NULL for discarding assignment (`_ = foo`)
 	struct ast_expression *object, *value;
 };
 
@@ -175,15 +174,14 @@ struct ast_expression_binarithm {
 	struct ast_expression *lvalue, *rvalue;
 };
 
-struct ast_binding_names {
-	struct ident *name; // NULL for _
-	struct ast_binding_names *next;
+struct ast_binding_unpack {
+	struct ident *name;
+	struct ast_binding_unpack *next;
 };
 
 struct ast_expression_binding {
-	// more than one name means tuple unpacking,
-	// otherwise it's a regular binding
-	struct ast_binding_names names;
+	struct ident *name;
+	struct ast_binding_unpack *unpack;
 	struct ast_type *type;
 	bool is_static;
 	struct ast_expression *initializer;
