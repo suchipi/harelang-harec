@@ -171,6 +171,11 @@ fn regression() void = {
 	assert(x.0 == 2 && x.1 == 1);
 };
 
+fn trailing_comma() void = {
+	let x: (int, bool,) = (0, false,);
+	let (y, z,) = x;
+};
+
 fn reject() void = {
 	let parse = [
 		// unpack with def
@@ -253,4 +258,5 @@ export fn main() void = {
 	regression();
 	reject();
 	_never();
+	trailing_comma();
 };

@@ -2139,6 +2139,10 @@ parse_binding_unpack(struct lexer *lexer, struct ast_binding_names *next)
 
 		switch (lex(lexer, &tok)) {
 		case T_COMMA:
+			if (lex(lexer, &tok) == T_RPAREN) {
+				return;
+			}
+			unlex(lexer, &tok);
 			next->next = xcalloc(1,
 				sizeof(struct ast_binding_names));
 			next = next->next;
