@@ -2184,8 +2184,7 @@ check_expr_for_each(struct context *ctx,
 		struct type_tagged_union *prev_tag = NULL;
 		int done_tags_found = 0;
 
-		// Reomve all done tags and aliases of it from the tagged
-		// union.
+		// Remove all done tags and aliases of it from the tagged union
 		for (struct type_tagged_union *tu = tags; tu; tu = tu->next) {
 			if (type_dealias(ctx, tu->type)->storage == STORAGE_DONE) {
 				if (prev_tag != NULL) {
