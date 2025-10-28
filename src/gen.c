@@ -621,6 +621,26 @@ gen_expr_alloc_with(struct gen_context *ctx,
 	return *out;
 }
 
+static struct qbe_value
+extend(struct gen_context *ctx, struct qbe_value v, const struct type *type)
+{
+	enum qbe_instr op;
+	switch (type->size) {
+	case 1:
+		op = type_is_signed(NULL, type) ? Q_EXTSB : Q_EXTUB;
+		break;
+	case 2:
+		op = type_is_signed(NULL, type) ? Q_EXTSH : Q_EXTUH;
+		break;
+	default:
+		return v;
+	}
+
+	struct qbe_value temp = mkqtmp(ctx, &qbe_word, ".%d");
+	pushi(ctx->current, &temp, op, &v, NULL);
+	return temp;
+}
+
 static void
 gen_expr_assert(struct gen_context *ctx, const struct expression *expr)
 {
@@ -630,6 +650,7 @@ gen_expr_assert(struct gen_context *ctx, const struct expression *expr)
 		struct qbe_value bpassed = mklabel(ctx, &passedl, "passed.%d");
 		struct gen_value cond = gen_expr(ctx, expr->assert.cond);
 		struct qbe_value qcond = mkqval(ctx, &cond);
+		qcond = extend(ctx, qcond, &builtin_type_bool);
 		pushi(ctx->current, NULL, Q_JNZ, &qcond, &bpassed, &bfailed, NULL);
 		push(&ctx->current->body, &failedl);
 	}
@@ -821,26 +842,6 @@ gen_expr_assign_slice(struct gen_context *ctx, const struct expression *expr)
 	pushi(ctx->current, &vptr, Q_LOADL, &qval, NULL);
 	pushi(ctx->current, &olen, Q_MUL, &olen, &tmp, NULL);
 	pushi(ctx->current, NULL, Q_CALL, &ctx->rt.memmove, &optr, &vptr, &olen, NULL);
-}
-
-static struct qbe_value
-extend(struct gen_context *ctx, struct qbe_value v, const struct type *type)
-{
-	enum qbe_instr op;
-	switch (type->size) {
-	case 1:
-		op = type_is_signed(NULL, type) ? Q_EXTSB : Q_EXTUB;
-		break;
-	case 2:
-		op = type_is_signed(NULL, type) ? Q_EXTSH : Q_EXTUH;
-		break;
-	default:
-		return v;
-	}
-
-	struct qbe_value temp = mkqtmp(ctx, &qbe_word, ".%d");
-	pushi(ctx->current, &temp, op, &v, NULL);
-	return temp;
 }
 
 bool bin_extend[BIN_LAST + 1][2] = {
@@ -2356,7 +2357,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 	case FOR_ACCUMULATOR: {
 		struct gen_value cond = gen_expr(ctx, expr->_for.cond);
 		struct qbe_value qcond = mkqval(ctx, &cond);
-
+		qcond = extend(ctx, qcond, &builtin_type_bool);
 		pushi(ctx->current, NULL, Q_JNZ, &qcond, &bbody, &bend, NULL);
 	}}
 
