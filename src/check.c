@@ -2130,8 +2130,8 @@ check_expr_for_each(struct context *ctx,
 				aexpr->loc, tags);
 			break;
 		}
-			default:
-				break;
+		default:
+			abort(); // unreachable
 		}
 	}
 	check_expression(ctx, abinding->initializer, initializer, init_type_hint);
