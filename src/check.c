@@ -1209,31 +1209,31 @@ check_expr_binarithm(struct context *ctx,
 	check_binarithm_op(ctx, expr, expr->binarithm.op);
 }
 
-static void
+static bool
 create_unpack_bindings(struct context *ctx,
 	const struct type *type,
 	const struct location loc,
 	const struct ast_binding_names *names,
 	bool is_static,
-	struct expression *expr)
+	struct expression_binding *binding)
 {
 	type = type_dealias(ctx, type);
 
 	if (type->storage != STORAGE_TUPLE) {
-		error(ctx, loc, expr,
+		error(ctx, loc, NULL,
 			"Cannot unpack non-tuple type");
-		return;
+		return false;
 	}
 
-	expr->binding.unpack = xcalloc(1, sizeof(struct binding_unpack));
-	struct binding_unpack *unpack = expr->binding.unpack;
+	binding->unpack = xcalloc(1, sizeof(struct binding_unpack));
+	struct binding_unpack *unpack = binding->unpack;
 	const struct type_tuple *type_tuple = &type->tuple;
 
 	while (names != NULL && type_tuple != NULL) {
 		if (type_tuple->type->size == SIZE_UNDEFINED) {
-			error(ctx, loc, expr,
+			error(ctx, loc, NULL,
 				"Cannot create binding of undefined size");
-			return;
+			return false;
 		}
 		if (names->name != NULL) {
 			if (unpack->object != NULL) {
@@ -1258,21 +1258,23 @@ create_unpack_bindings(struct context *ctx,
 		type_tuple = type_tuple->next;
 	}
 
-	if (expr->binding.unpack->object == NULL) {
-		error(ctx, loc, expr,
+	if (binding->unpack->object == NULL) {
+		error(ctx, loc, NULL,
 			"Must have at least one non-underscore value when unpacking tuples");
-		return;
+		return false;
 	}
 	if (type_tuple != NULL) {
-		error(ctx, loc, expr,
+		error(ctx, loc, NULL,
 			"Fewer bindings than tuple elements were provided when unpacking");
-		return;
+		return false;
 	}
 	if (names != NULL) {
-		error(ctx, loc, expr,
+		error(ctx, loc, NULL,
 			"More bindings than tuple elements were provided when unpacking");
-		return;
+		return false;
 	}
+
+	return true;
 }
 
 static void
@@ -1346,9 +1348,11 @@ check_expr_binding(struct context *ctx,
 			type = type_store_lookup_with_flags(ctx, type, 0);
 		}
 		if (abinding->names.next != NULL) {
-			create_unpack_bindings(ctx, type,
-				abinding->initializer->loc, &abinding->names,
-				abinding->is_static, expr);
+			if (!create_unpack_bindings(ctx, type,
+					abinding->initializer->loc, &abinding->names,
+					abinding->is_static, binding)) {
+				mkerror(expr);
+			}
 		} else if (abinding->names.name != NULL) {
 			if (abinding->is_static) {
 				// Generate a static declaration ident
@@ -2217,8 +2221,11 @@ check_expr_for_each(struct context *ctx,
 		// error is recoverable
 	}
 	if (abinding->names.next != NULL) {
-		create_unpack_bindings(ctx, var_type, initializer->loc,
-			&abinding->names, abinding->is_static, binding);
+		if (!create_unpack_bindings(ctx, var_type, initializer->loc,
+				&abinding->names, abinding->is_static, &binding->binding)) {
+			mkerror(binding);
+		
+		};
 	} else if (abinding->names.name != NULL) {
 		binding->binding.object = scope_insert(ctx->scope, O_BIND,
 			abinding->names.name, abinding->names.name, var_type, NULL);

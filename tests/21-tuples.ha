@@ -51,6 +51,9 @@ fn assignment() void = {
 	let x = (void, void);
 	x.0 = x.1;
 	x.1 = void;
+
+	let (a, b) = (1, 2), (c, d) = (3, 4);
+	assert(a == 1 && b == 2 && c == 3 && d == 4);
 };
 
 fn func(in: (int, size)) (int, size) = (in.0 + 1, in.1 + 1);
