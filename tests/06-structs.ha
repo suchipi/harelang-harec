@@ -242,6 +242,13 @@ fn _offset() void = {
 	assert(offset(x.y) == 24);
 };
 
+type autofill_union = struct {
+	union {
+		i: int,
+		p: *int,
+	},
+};
+
 fn autofill() void = {
 	let x = coords { x = 10, ... };
 	assert(x.x == 10 && x.y == 0);
@@ -266,6 +273,10 @@ fn autofill() void = {
 	assert(l4.a == 0 && l4.b == 0 && l4.x == 0  && l4.y == 0  && l4.z == -3 && l4.f == 20 && l4.g.0 == 0 && l4.g.1 == "" && l4.h == _enum::B && l4.p == null);
 	assert(l5.a == 0 && l5.b == 0 && l5.x == 0  && l5.y == 0  && l5.z == 0  && l5.f == 20 && l5.g.0 == 0 && l5.g.1 == "" && l5.h == _enum::B && l5.p == null);
 	assert(l6.a == 0 && l6.b == 0 && l6.x == 0  && l6.y == 0  && l6.z == 0  && l6.f == 0  && l6.g.0 == 0 && l6.g.1 == "" && l6.h == _enum::B && l6.p == null);
+
+	let au = autofill_union { ... };
+	let au = autofill_union { i = 5, ... };
+	let au = autofill_union { i = 5 };
 };
 
 fn invariants() void = {

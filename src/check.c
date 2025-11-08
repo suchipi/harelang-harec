@@ -1159,7 +1159,6 @@ type_has_default(struct context *ctx, const struct type *type)
 	case STORAGE_POINTER:
 		return type->pointer.nullable;
 	case STORAGE_STRUCT:
-	case STORAGE_UNION:
 		for (struct struct_field *sf = type->struct_union.fields;
 				sf != NULL; sf = sf->next) {
 			if (!type_has_default(ctx, sf->type)) {
@@ -1167,6 +1166,14 @@ type_has_default(struct context *ctx, const struct type *type)
 			}
 		}
 		return true;
+	case STORAGE_UNION:
+		for (struct struct_field *sf = type->struct_union.fields;
+				sf != NULL; sf = sf->next) {
+			if (type_has_default(ctx, sf->type)) {
+				return true;
+			}
+		}
+		return false;
 	case STORAGE_TUPLE:
 		for (const struct type_tuple *t = &type->tuple;
 				t != NULL; t = t->next) {
