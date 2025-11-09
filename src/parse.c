@@ -87,6 +87,7 @@ synassert(bool cond, struct token *tok, ...)
 	}
 }
 
+// Error if the next token is not the provided type.
 static void
 want(struct lexer *lexer, enum lexical_token ltok, struct token *tok)
 {
@@ -94,6 +95,18 @@ want(struct lexer *lexer, enum lexical_token ltok, struct token *tok)
 	struct token *out = tok ? tok : &_tok;
 	lex(lexer, out);
 	synassert(out->token == ltok, out, ltok, T_EOF);
+}
+
+// Advance the lexer if the next token is the provided type. Returns whether or
+// not it advanced.
+static bool
+try(struct lexer *lexer, enum lexical_token ltok)
+{
+	struct token tok = {0};
+	if (lex(lexer, &tok) != ltok) {
+		unlex(lexer, &tok);
+	}
+	return tok.token == ltok;
 }
 
 static struct ast_expression *
@@ -213,15 +226,10 @@ parse_import(struct lexer *lexer, struct ast_imports *import)
 			synerr(&tok, T_LBRACE, T_TIMES, T_EOF);
 		}
 	} else if (import->ident->ns == NULL) {
-		switch (lex(lexer, &tok)) {
-		case T_EQUAL:
+		if (try(lexer, T_EQUAL)) {
 			import->mode = IMPORT_ALIAS;
 			import->alias = import->ident->name;
 			import->ident = parse_identifier(lexer, NULL, NULL);
-			break;
-		default:
-			unlex(lexer, &tok);
-			break;
 		}
 	}
 }
@@ -229,24 +237,19 @@ parse_import(struct lexer *lexer, struct ast_imports *import)
 static void
 parse_imports(struct lexer *lexer, struct ast_subunit *subunit)
 {
-	struct token tok = {0};
 	struct ast_imports **next = &subunit->imports;
 
 	bool more = true;
 	while (more) {
 		struct ast_imports *imports;
-		switch (lex(lexer, &tok)) {
-		case T_USE:
+		if (try(lexer, T_USE)) {
 			imports = xcalloc(1, sizeof(struct ast_imports));
 			parse_import(lexer, imports);
 			want(lexer, T_SEMICOLON, NULL);
 			*next = imports;
 			next = &imports->next;
-			break;
-		default:
-			unlex(lexer, &tok);
+		} else {
 			more = false;
-			break;
 		}
 	}
 }
@@ -285,13 +288,8 @@ parse_parameter_list(struct lexer *lexer, struct ast_function_type *type)
 				T_EOF);
 		}
 
-		switch (lex(lexer, &tok)) {
-		case T_EQUAL:
+		if (try(lexer, T_EQUAL)) {
 			(*next)->default_value = parse_expression(lexer);
-			break;
-		default:
-			unlex(lexer, &tok);
-			break;
 		}
 
 		switch (lex(lexer, &tok)) {
@@ -458,10 +456,8 @@ parse_enum_type(struct ident *ident, struct lexer *lexer)
 		want(lexer, T_NAME, &tok);
 		(*next)->name = intern_name(lexer->itbl, tok.name);
 		(*next)->loc = tok.loc;
-		if (lex(lexer, &tok) == T_EQUAL) {
+		if (try(lexer, T_EQUAL)) {
 			(*next)->value = parse_expression(lexer);
-		} else {
-			unlex(lexer, &tok);
 		}
 		next = &(*next)->next;
 		switch (lex(lexer, &tok)) {
@@ -496,11 +492,7 @@ parse_struct_union_type(struct lexer *lexer)
 		synerr(&tok, T_STRUCT, T_UNION, T_EOF);
 		break;
 	}
-	if (lex(lexer, &tok) == T_ATTR_PACKED) {
-		type->struct_union.packed = true;
-	} else {
-		unlex(lexer, &tok);
-	}
+	type->struct_union.packed = try(lexer, T_ATTR_PACKED);
 	want(lexer, T_LBRACE, NULL);
 	while (tok.token != T_RBRACE) {
 		switch (lex(lexer, &tok)) {
@@ -628,16 +620,9 @@ parse_type(struct lexer *lexer)
 {
 	struct token tok = {0};
 	uint32_t flags = 0;
-	if (lex(lexer, &tok) != T_CONST) {
-		unlex(lexer, &tok);
-	}
-	switch (lex(lexer, &tok)) {
-	case T_LNOT:
+	try(lexer, T_CONST);
+	if (try(lexer, T_LNOT)) {
 		flags |= TYPE_ERROR;
-		break;
-	default:
-		unlex(lexer, &tok);
-		break;
 	}
 	struct ast_type *type = NULL;
 	bool nullable = false, unwrap = false;
@@ -996,10 +981,9 @@ parse_tuple_expression(struct lexer *lexer, struct ast_expression *first)
 			more = false;
 			break;
 		case T_COMMA:
-			if (lex(lexer, &tok) == T_RPAREN) {
+			if (try(lexer, T_RPAREN)) {
 				more = false;
 			} else {
-				unlex(lexer, &tok);
 				tuple->next = xcalloc(1,
 					sizeof(struct ast_expression_tuple));
 				tuple = tuple->next;
@@ -1084,17 +1068,14 @@ parse_assertion(struct lexer *lexer, bool is_static,
 	case T_ASSERT:
 		want(lexer, T_LPAREN, &tok);
 		exp->cond = parse_expression(lexer);
-		if (lex(lexer, &tok) == T_COMMA) {
+		if (try(lexer, T_COMMA)) {
 			exp->message = parse_expression(lexer);
-		} else {
-			unlex(lexer, &tok);
 		}
 		want(lexer, T_RPAREN, &tok);
 		break;
 	case T_ABORT:
 		want(lexer, T_LPAREN, &tok);
-		if (lex(lexer, &tok) != T_RPAREN) {
-			unlex(lexer, &tok);
+		if (!try(lexer, T_RPAREN)) {
 			exp->message = parse_expression(lexer);
 			want(lexer, T_RPAREN, &tok);
 		}
@@ -1193,14 +1174,10 @@ parse_index_slice_expression(struct lexer *lexer, struct ast_expression *lvalue)
 	want(lexer, T_LBRACKET, &tok);
 
 	bool is_slice = false;
-	switch (lex(lexer, &tok)) {
-	case T_DOUBLE_DOT:
+	if (try(lexer, T_DOUBLE_DOT)) {
 		is_slice = true;
-		break;
-	default:
-		unlex(lexer, &tok);
+	} else {
 		start = parse_expression(lexer);
-		break;
 	}
 
 	switch (lex(lexer, &tok)) {
@@ -1228,14 +1205,9 @@ parse_index_slice_expression(struct lexer *lexer, struct ast_expression *lvalue)
 		unlex(lexer, &tok);
 	}
 
-	switch (lex(lexer, &tok)) {
-	case T_RBRACKET:
-		break;
-	default:
-		unlex(lexer, &tok);
+	if (!try(lexer, T_RBRACKET)) {
 		end = parse_expression(lexer);
 		want(lexer, T_RBRACKET, &tok);
-		break;
 	}
 
 	exp->type = EXPR_SLICE;
@@ -1615,11 +1587,10 @@ parse_cast_expression(struct lexer *lexer, struct ast_expression *value)
 	if (kind == C_CAST) {
 		exp->cast.type = parse_type(lexer);
 	} else {
-		if (lex(lexer, &tok) == T_NULL) {
+		if (try(lexer, T_NULL)) {
 			exp->cast.type = mktype(tok.loc);
 			exp->cast.type->storage = STORAGE_NULL;
 		} else {
-			unlex(lexer, &tok);
 			exp->cast.type = parse_type(lexer);
 		}
 	}
@@ -1761,13 +1732,8 @@ parse_if_expression(struct lexer *lexer)
 
 	exp->_if.true_branch = parse_expression(lexer);
 
-	switch (lex(lexer, &tok)) {
-	case T_ELSE:
+	if (try(lexer, T_ELSE)) {
 		exp->_if.false_branch = parse_expression(lexer);
-		break;
-	default:
-		unlex(lexer, &tok);
-		break;
 	}
 	return exp;
 }
@@ -1810,10 +1776,8 @@ static void parse_for_predicate(struct lexer *lexer,
 					T_LPAREN, T_EOF);
 			}
 
-			if (lex(lexer, &tok) == T_COLON) {
+			if (try(lexer, T_COLON)) {
 				binding->type = parse_type(lexer);
-			} else {
-				unlex(lexer, &tok);
 			}
 
 			if (for_kind_found) {
@@ -1845,8 +1809,7 @@ static void parse_for_predicate(struct lexer *lexer,
 			if (for_exp->kind != FOR_ACCUMULATOR) {
 				return;
 			}
-			if (lex(lexer, &tok) != T_COMMA) {
-				unlex(lexer, &tok);
+			if (!try(lexer, T_COMMA)) {
 				break;
 			}
 			binding->next = xcalloc(1, sizeof(struct ast_expression_binding));
@@ -1857,8 +1820,7 @@ static void parse_for_predicate(struct lexer *lexer,
 		for_exp->cond = parse_expression(lexer);
 	}
 
-	if (lex(lexer, &tok) != T_SEMICOLON) {
-		unlex(lexer, &tok);
+	if (!try(lexer, T_SEMICOLON)) {
 		return;
 	}
 
@@ -1897,12 +1859,8 @@ static struct ast_case_option *
 parse_case_options(struct lexer *lexer)
 {
 	struct token tok = {0};
-	switch (lex(lexer, &tok)) {
-	case T_ARROW:
+	if (try(lexer, T_ARROW)) {
 		return NULL; // Default case
-	default:
-		unlex(lexer, &tok);
-		break;
 	}
 
 	bool more = true;
@@ -1913,16 +1871,12 @@ parse_case_options(struct lexer *lexer)
 		opt->value = parse_expression(lexer);
 		switch (lex(lexer, &tok)) {
 		case T_COMMA:
-			switch (lex(lexer, &tok)) {
-			case T_ARROW:
+			if (try(lexer, T_ARROW)) {
 				more = false;
-				break;
-			default:
-				unlex(lexer, &tok);
+			} else {
 				opt = xcalloc(1, sizeof(struct ast_case_option));
 				*next = opt;
 				next = &opt->next;
-				break;
 			}
 			break;
 		case T_ARROW:
@@ -2253,14 +2207,9 @@ parse_control_expression(struct lexer *lexer)
 	case T_CONTINUE:
 		exp->type = tok.token == T_BREAK ? EXPR_BREAK : EXPR_CONTINUE;
 		exp->control.label = NULL;
-		switch (lex(lexer, &tok)) {
-		case T_COLON:
+		if (try(lexer, T_COLON)) {
 			want(lexer, T_NAME, &tok);
 			exp->control.label = tok.name;
-			break;
-		default:
-			unlex(lexer, &tok);
-			break;
 		}
 		break;
 	case T_RETURN:
@@ -2296,13 +2245,8 @@ parse_control_expression(struct lexer *lexer)
 		case T_COLON:
 			want(lexer, T_NAME, &tok);
 			exp->control.label = tok.name;
-			switch (lex(lexer, &tok)) {
-			case T_COMMA:
+			if (try(lexer, T_COMMA)) {
 				exp->control.value = parse_expression(lexer);
-				break;
-			default:
-				unlex(lexer, &tok);
-				break;
 			}
 			break;
 		default:
@@ -2342,12 +2286,8 @@ parse_compound_expression(struct lexer *lexer)
 	}
 
 	struct location loc = tok.loc;
-	switch (lex(lexer, &tok)) {
-	case T_RBRACE:
+	if (try(lexer, T_RBRACE)) {
 		error(loc, "syntax error: cannot have empty block");
-	default:
-		unlex(lexer, &tok);
-		break;
 	}
 
 	while (true) {
@@ -2495,22 +2435,10 @@ parse_global_decl(struct lexer *lexer, enum lexical_token mode,
 	bool more = true;
 	while (more) {
 		if (mode == T_LET || mode == T_CONST) {
-			switch (lex(lexer, &tok)) {
-			case T_ATTR_SYMBOL:
+			if (try(lexer, T_ATTR_SYMBOL)) {
 				i->symbol = parse_attr_symbol(lexer);
-				break;
-			default:
-				unlex(lexer, &tok);
-				break;
 			}
-			switch (lex(lexer, &tok)) {
-			case T_ATTR_THREADLOCAL:
-				i->threadlocal = true;
-				break;
-			default:
-				unlex(lexer, &tok);
-				break;
-			}
+			i->threadlocal = try(lexer, T_ATTR_THREADLOCAL);
 		}
 		i->ident = parse_identifier(lexer, NULL, NULL);
 		switch (lex(lexer, &tok)) {
@@ -2557,12 +2485,9 @@ parse_type_decl(struct lexer *lexer, struct ast_type_decl *decl)
 	while (more) {
 		i->ident = parse_identifier(lexer, NULL, NULL);
 		want(lexer, T_EQUAL, NULL);
-		switch (lex(lexer, &tok)) {
-		case T_ENUM:
+		if (try(lexer, T_ENUM)) {
 			i->type = parse_enum_type(i->ident, lexer);
-			break;
-		default:
-			unlex(lexer, &tok);
+		} else {
 			i->type = parse_type(lexer);
 		}
 		switch (lex(lexer, &tok)) {
