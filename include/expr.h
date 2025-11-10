@@ -245,7 +245,7 @@ struct expression_literal {
 struct expression_control {
 	const char *label;
 	const struct scope *scope;
-	struct expression *value; // Only set for yield
+	struct expression *value; // Only set for yield and break
 };
 
 struct expression_defer {
@@ -273,6 +273,7 @@ struct expression_for {
 	struct expression *cond;
 	struct expression *afterthought;
 	struct expression *body;
+	struct expression *else_branch;
 };
 
 struct expression_free {

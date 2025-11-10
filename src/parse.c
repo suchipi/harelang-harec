@@ -1852,6 +1852,15 @@ parse_for_expression(struct lexer *lexer)
 	want(lexer, T_RPAREN, &tok);
 
 	exp->_for.body = parse_expression(lexer);
+
+	switch (lex(lexer, &tok)) {
+	case T_ELSE:
+		exp->_for.else_branch = parse_expression(lexer);
+		break;
+	default:
+		unlex(lexer, &tok);
+		break;
+	}
 	return exp;
 }
 
@@ -2200,64 +2209,63 @@ static struct ast_expression *
 parse_control_expression(struct lexer *lexer)
 {
 	struct ast_expression *exp = mkexpr(lexer->loc);
+	exp->control.label = NULL;
+	exp->control.value = NULL;
 
 	struct token tok;
 	switch (lex(lexer, &tok)) {
 	case T_BREAK:
+		exp->type = EXPR_BREAK;
+		break;
 	case T_CONTINUE:
-		exp->type = tok.token == T_BREAK ? EXPR_BREAK : EXPR_CONTINUE;
-		exp->control.label = NULL;
-		if (try(lexer, T_COLON)) {
-			want(lexer, T_NAME, &tok);
-			exp->control.label = tok.name;
-		}
+		exp->type = EXPR_CONTINUE;
 		break;
 	case T_RETURN:
 		exp->type = EXPR_RETURN;
-		exp->_return.value = NULL;
-		switch (lex(lexer, &tok)) {
-		case T_COMMA:
-		case T_ELSE:
-		case T_RBRACE:
-		case T_RBRACKET:
-		case T_RPAREN:
-		case T_SEMICOLON:
-			unlex(lexer, &tok);
-			break;
-		default:
-			unlex(lexer, &tok);
-			exp->_return.value = parse_expression(lexer);
-			break;
-		}
 		break;
 	case T_YIELD:
 		exp->type = EXPR_YIELD;
-		exp->control.value = NULL;
-		switch (lex(lexer, &tok)) {
-		case T_COMMA:
-		case T_ELSE:
-		case T_RBRACE:
-		case T_RBRACKET:
-		case T_RPAREN:
-		case T_SEMICOLON:
+		break;
+	default:
+		abort(); // unreachable
+	}
+
+	switch (lex(lexer, &tok)) {
+	case T_COMMA:
+	case T_ELSE:
+	case T_RBRACE:
+	case T_RBRACKET:
+	case T_RPAREN:
+	case T_SEMICOLON:
+		unlex(lexer, &tok);
+		break;
+	case T_COLON:
+		if (exp->type == EXPR_RETURN) {
+			// return does not take a label
 			unlex(lexer, &tok);
 			break;
-		case T_COLON:
-			want(lexer, T_NAME, &tok);
-			exp->control.label = tok.name;
-			if (try(lexer, T_COMMA)) {
+		}
+		want(lexer, T_NAME, &tok);
+		exp->control.label = tok.name;
+		if (exp->type == EXPR_YIELD || exp->type == EXPR_BREAK) {
+			switch (lex(lexer, &tok)) {
+			case T_COMMA:
 				exp->control.value = parse_expression(lexer);
+				break;
+			default:
+				unlex(lexer, &tok);
+				break;
 			}
-			break;
-		default:
-			unlex(lexer, &tok);
-			exp->control.value = parse_expression(lexer);
-			break;
 		}
 		break;
 	default:
-		synerr(&tok,
-			T_BREAK, T_CONTINUE, T_RETURN, T_YIELD, T_EOF);
+		unlex(lexer, &tok);
+		if (exp->type == EXPR_CONTINUE) {
+			// continue does not take an expression
+			break;
+		}
+		exp->control.value = parse_expression(lexer);
+		break;
 	}
 	return exp;
 }

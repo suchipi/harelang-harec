@@ -222,8 +222,8 @@ struct ast_expression_literal {
 };
 
 struct ast_expression_control {
-	const char *label;
-	struct ast_expression *value; // Only set for yield
+	const char *label; // Never set for return.
+	struct ast_expression *value; // Never set for continue
 };
 
 struct ast_expression_defer {
@@ -242,6 +242,7 @@ struct ast_expression_for {
 	struct ast_expression *cond;
 	struct ast_expression *afterthought;
 	struct ast_expression *body;
+	struct ast_expression *else_branch;
 };
 
 struct ast_expression_free {
@@ -291,10 +292,6 @@ struct ast_expression_measure {
 struct ast_expression_propagate {
 	struct ast_expression *value;
 	bool abort;
-};
-
-struct ast_expression_return {
-	struct ast_expression *value;
 };
 
 struct ast_expression_slice {
@@ -371,7 +368,6 @@ struct ast_expression {
 		struct ast_expression_match match;
 		struct ast_expression_measure measure;
 		struct ast_expression_propagate propagate;
-		struct ast_expression_return _return;
 		struct ast_expression_slice slice;
 		struct ast_expression_struct _struct;
 		struct ast_expression_switch _switch;

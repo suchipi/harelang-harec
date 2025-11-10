@@ -62,6 +62,45 @@ fn _break() void = {
 	assert(x == 1);
 };
 
+fn break_value() void = {
+	let x = for (let i = 0; i < 1; i += 1) {
+		if (true) break 5;
+	};
+	assert(x as int == 5);
+
+	let x = for (let i = 0; i < 1; i += 1) {
+		if (false) break 5;
+	};
+	assert(x is void);
+
+	let x = for (let i = 0; i < 1; break 5) void;
+	assert(x as int == 5);
+
+	for (let i = 0; i < 1; i += 1) {
+		if (true) { break 5; };
+	};
+
+	let x = for (let i = 0; i < 1; i += 1) {
+		if (true) break "hi" else break 5;
+	};
+	assert(x as str == "hi");
+
+	let x = for :outer (let i = 0; i < 1; i += 1) {
+		for (let j = 0; j < 1; j += 1) break :outer, 5;
+	};
+	assert(x as int == 5);
+
+	let x = for (let x .. [1, 2, 3, 4]) {
+		if (x == 3) break x;
+	};
+	assert(x as int == 3);
+
+	let x: (size | void) = for (let i = 0; i < 1; i += 1) {
+		break 4;
+	};
+	assert(x as size == 4z);
+};
+
 fn _continue() void = {
 	let finished = false;
 	let x = 0;
@@ -491,15 +530,59 @@ fn for_each() void = {
 
 fn next() ((int, int) | done) = (4, 2);
 
+fn for_else() void = {
+	for (let i = 0; i < 10; i += 1) {
+		if (i == 3) break;
+	} else abort();
+
+	let x = for (let i = 0; i < 10; i += 1) void else true;
+	assert(x);
+
+	let x = for (let i = 0; i < 10; i += 1) break else true;
+	assert(x is void);
+
+	let found = for (let i = 0; i < 10; i += 1) {
+		if (i == 3) break true;
+	} else false;
+	assert(found);
+
+	let found = for (let i = 0; i < 10; i += 1) {
+		if (i == 13) break true;
+	} else false;
+	assert(!found);
+
+	let found = for (let x .. [1, 2, 3, 4]) {
+		if (x == 3) break true;
+	} else false;
+	assert(found);
+
+	let found = for (let x .. [1, 2, 3, 4]) {
+		if (x == 5) break true;
+	} else false;
+	assert(!found);
+
+	let x = 0;
+	let v = for (true) {
+		x += 1;
+		if (x == 3) break true;
+	} else 5;
+	assert(v);
+
+	let x = for (true) if (true) break 1 else break 2;
+	assert(x == 1);
+};
+
 export fn main() void = {
 	scope();
 	conditional();
 	afterthought();
 	binding();
 	_break();
+	break_value();
 	_continue();
 	label();
 	alias();
 	result();
 	for_each();
+	for_else();
 };

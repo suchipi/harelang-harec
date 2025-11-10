@@ -49,15 +49,12 @@ enum scope_class {
 	SCOPE_DEFINES,
 };
 
-struct yield {
+struct yield { // and break
 	struct expression **expression;
 	struct yield *next;
 };
 
 struct scope {
-	// Used for for loops
-	bool has_break;
-
 	enum scope_class class;
 	const char *label;
 	struct scope *parent;

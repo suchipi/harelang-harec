@@ -1952,10 +1952,6 @@ check_expr_control(struct context *ctx,
 		scope = scope_lookup_class(ctx->scope, want);
 	}
 	if (scope) {
-		if (expr->type == EXPR_BREAK) {
-			scope->has_break = true;
-		}
-
 		struct scope *defer_scope =
 			scope_lookup_class(ctx->scope, SCOPE_DEFER);
 		if (defer_scope) {
@@ -1984,26 +1980,23 @@ check_expr_control(struct context *ctx,
 			assert(0); // Invariant
 		}
 		error(ctx, aexpr->loc, NULL, "%s", msg);
-		// continue checking so other errors can be reported
+		// No need to continue checking, because we won't have the right
+		// hint for the value without a scope.
+		return;
 	}
 	expr->control.scope = scope;
 
-	if (expr->type != EXPR_YIELD) {
+	if (expr->type == EXPR_CONTINUE) {
 		return;
 	}
 
 	expr->control.value = xcalloc(1, sizeof(struct expression));
 	if (aexpr->control.value) {
-		const struct type *hint = scope ? scope->hint : NULL;
 		check_expression(ctx, aexpr->control.value,
-			expr->control.value, hint);
+			expr->control.value, scope->hint);
 	} else {
 		expr->control.value->type = EXPR_LITERAL;
 		expr->control.value->result = &builtin_type_void;
-	}
-
-	if (scope == NULL) {
-		return;
 	}
 
 	struct type_tagged_union *result =
@@ -2021,9 +2014,7 @@ check_expr_control(struct context *ctx,
 static void
 check_expr_for_accumulator(struct context *ctx,
 	const struct ast_expression *aexpr,
-	struct expression *expr,
-	const struct type *hint,
-	struct scope *scope)
+	struct expression *expr)
 {
 	struct expression *bindings = NULL, *cond = NULL, *afterthought = NULL;
 
@@ -2031,9 +2022,11 @@ check_expr_for_accumulator(struct context *ctx,
 		bindings = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, aexpr->_for.bindings, bindings, NULL);
 		if (bindings->result->storage == STORAGE_ERROR) {
+			// It won't be fruitful to continue checking if the
+			// bindings fail.
 			return;
 		}
-		assert(bindings->result->storage == STORAGE_VOID);
+		assert(bindings->type == EXPR_BINDING);
 		expr->_for.bindings = bindings;
 	}
 
@@ -2044,12 +2037,12 @@ check_expr_for_accumulator(struct context *ctx,
 			&& cond->result->storage != STORAGE_ERROR) {
 		error(ctx, aexpr->_for.cond->loc, expr,
 			"Expected for condition to be boolean");
-		return;
 	}
 
 	if (aexpr->_for.afterthought) {
 		afterthought = xcalloc(1, sizeof(struct expression));
-		check_expression(ctx, aexpr->_for.afterthought, afterthought, &builtin_type_void);
+		check_expression(ctx, aexpr->_for.afterthought, afterthought,
+			NULL);
 		if (type_has_error(ctx, afterthought->result)) {
 			error(ctx, aexpr->_for.afterthought->loc, afterthought,
 				"Cannot ignore error here");
@@ -2058,27 +2051,23 @@ check_expr_for_accumulator(struct context *ctx,
 	}
 
 	struct expression *body = xcalloc(1, sizeof(struct expression));
-	expr->_for.body = body;
 	check_expression(ctx, aexpr->_for.body, body, NULL);
 	if (type_has_error(ctx, body->result)) {
 		error(ctx, aexpr->_for.body->loc, body,
 			"Cannot ignore error here");
 	}
-
 	expr->_for.body = body;
+
 	struct expression evaled;
-	if (eval_expr(ctx, expr->_for.cond, &evaled)) {
-		if (evaled.literal.bval && !scope->has_break) {
-			expr->result = &builtin_type_never;
-		}
+	if (eval_expr(ctx, expr->_for.cond, &evaled) && evaled.literal.bval) {
+		expr->result = &builtin_type_never;
 	}
 }
 
 static void
 check_expr_for_each(struct context *ctx,
 	const struct ast_expression *aexpr,
-	struct expression *expr,
-	const struct type *hint)
+	struct expression *expr)
 {
 	struct expression *binding = xcalloc(1, sizeof(struct expression));
 	struct expression *initializer = xcalloc(1, sizeof(struct expression));
@@ -2271,6 +2260,7 @@ check_expr_for(struct context *ctx,
 	expr->_for.kind = aexpr->_for.kind;
 
 	struct scope *scope = scope_push(&ctx->scope, SCOPE_LOOP);
+	scope->hint = hint;
 	expr->_for.scope = scope;
 
 	if (aexpr->_for.label) {
@@ -2280,16 +2270,60 @@ check_expr_for(struct context *ctx,
 
 	switch (expr->_for.kind) {
 	case FOR_ACCUMULATOR:
-		check_expr_for_accumulator(ctx, aexpr, expr, hint, scope);
+		check_expr_for_accumulator(ctx, aexpr, expr);
 		break;
 	case FOR_EACH_VALUE:
 	case FOR_EACH_POINTER:
 	case FOR_EACH_ITERATOR:
-		check_expr_for_each(ctx, aexpr, expr, hint);
+		check_expr_for_each(ctx, aexpr, expr);
 		break;
 	}
 
 	scope_pop(&ctx->scope);
+
+	// The else branch is not evaluated in the loop scope.
+	if (aexpr->_for.else_branch) {
+		expr->_for.else_branch = xcalloc(1, sizeof(struct expression));
+		check_expression(ctx, aexpr->_for.else_branch,
+			expr->_for.else_branch, hint);
+		if (expr->result != &builtin_type_never) {
+			expr->result = expr->_for.else_branch->result;
+		}
+	}
+
+	// If every possible result type is assignable to the hint, just set the
+	// hint as the result type.
+	bool assignable_to_hint = true;
+	if (hint && type_is_assignable(ctx, hint, expr->result)) {
+		for (struct type_tagged_union *tu = scope->results; tu;
+				tu = tu->next) {
+			if (!type_is_assignable(ctx, hint, tu->type)) {
+				assignable_to_hint = false;
+				break;
+			}
+		}
+	} else {
+		assignable_to_hint = false;
+	}
+	if (assignable_to_hint) {
+		expr->result = hint;
+	} else {
+		struct type_tagged_union *tu = xcalloc(1,
+			sizeof(struct type_tagged_union));
+		tu->type = expr->result;
+		tu->next = scope->results;
+		expr->result = type_store_reduce_result(ctx, aexpr->loc, tu);
+	}
+
+	// Lower the break values to the result type.
+	for (struct yield *yield = scope->yields; yield;) {
+		*yield->expression = lower_implicit_cast(ctx, expr->result,
+			*yield->expression);
+
+		struct yield *next = yield->next;
+		free(yield);
+		yield = next;
+	}
 }
 
 static void
@@ -2870,12 +2904,12 @@ check_expr_return(struct context *ctx,
 
 	struct expression *rval = expr->_return.value =
 		xcalloc(1, sizeof(struct expression));
-	if (aexpr->_return.value) {
+	if (aexpr->control.value) {
 		const struct type *hint = NULL;
 		if (ctx->fntype) {
 			hint = ctx->fntype->func.result;
 		}
-		check_expression(ctx, aexpr->_return.value, rval, hint);
+		check_expression(ctx, aexpr->control.value, rval, hint);
 	} else {
 		rval->type = EXPR_LITERAL;
 		rval->result = &builtin_type_void;

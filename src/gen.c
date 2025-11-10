@@ -2131,15 +2131,17 @@ gen_expr_delete(struct gen_context *ctx, const struct expression *expr)
 	}
 }
 
-static void
-gen_expr_for(struct gen_context *ctx, const struct expression *expr)
+static struct gen_value
+gen_expr_for_with(struct gen_context *ctx, const struct expression *expr,
+	struct gen_value *out)
 {
-	struct qbe_statement lloop, lbody, lvalid, lafter, lend;
+	struct qbe_statement lloop, lbody, lvalid, lafter, lend, lelse;
 	struct qbe_value bloop = mklabel(ctx, &lloop, "loop.%d");
 	struct qbe_value bbody = mklabel(ctx, &lbody, "body.%d");
 	struct qbe_value bvalid = mklabel(ctx, &lvalid, "valid.%d");
 	struct qbe_value bend = mklabel(ctx, &lend, ".%d");
 	struct qbe_value bafter = mklabel(ctx, &lafter, "after.%d");
+	struct qbe_value belse = mklabel(ctx, &lelse, "else.%d");
 
 	struct gen_value gcur_object, ginitializer, gptr;
 	struct qbe_value qcur_object, qinitializer, qptr, qcur_idx, qlength;
@@ -2209,9 +2211,16 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		pushi(ctx->current, &qcur_idx, Q_COPY, &qzero, NULL);
 	}
 
-	push_scope(ctx, expr->_for.scope);
-	ctx->scope->after = &bafter;
-	ctx->scope->end = &bend;
+	struct gen_value gvout = gv_void;
+	if (!out) {
+		gvout = mkgtemp(ctx, expr->result, ".%d");
+	}
+
+	struct gen_scope *scope = push_scope(ctx, expr->_for.scope);
+	scope->out = out;
+	scope->result = gvout;
+	scope->after = &bafter;
+	scope->end = &bend;
 
 	push(&ctx->current->body, &lloop);
 
@@ -2221,7 +2230,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		struct qbe_value qvalid = mkqtmp(ctx, &qbe_word, "valid.%d");
 
 		pushi(ctx->current, &qvalid, Q_CULTL, &qcur_idx, &qlength, NULL);
-		pushi(ctx->current, NULL, Q_JNZ, &qvalid, &bvalid, &bend, NULL);
+		pushi(ctx->current, NULL, Q_JNZ, &qvalid, &bvalid, &belse, NULL);
 		push(&ctx->current->body, &lvalid);
 
 		if (binding->object != NULL) {
@@ -2295,7 +2304,7 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		struct qbe_value qisdone = mkqtmp(ctx, &qbe_word, ".%d");
 
 		pushi(ctx->current, &qisdone, Q_CEQW, &qtag, &qdone_tag, NULL);
-		pushi(ctx->current, NULL, Q_JNZ, &qisdone, &bend, &bvalid, NULL);
+		pushi(ctx->current, NULL, Q_JNZ, &qisdone, &belse, &bvalid, NULL);
 		push(&ctx->current->body, &lvalid);
 
 		const struct type *var_type = NULL;
@@ -2358,10 +2367,10 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 		struct gen_value cond = gen_expr(ctx, expr->_for.cond);
 		struct qbe_value qcond = mkqval(ctx, &cond);
 		qcond = extend(ctx, qcond, &builtin_type_bool);
-		pushi(ctx->current, NULL, Q_JNZ, &qcond, &bbody, &bend, NULL);
+		pushi(ctx->current, NULL, Q_JNZ, &qcond, &bbody, &belse, NULL);
 	}}
-
 	push(&ctx->current->body, &lbody);
+
 	gen_expr(ctx, expr->_for.body);
 
 	push(&ctx->current->body, &lafter);
@@ -2378,7 +2387,18 @@ gen_expr_for(struct gen_context *ctx, const struct expression *expr)
 
 	pushi(ctx->current, NULL, Q_JMP, &bloop, NULL);
 
+	push(&ctx->current->body, &lelse);
+
+	if (expr->_for.else_branch) {
+		gen_expr_branch(ctx, expr->_for.else_branch, gvout, out);
+	} else if (out && expr->result->storage == STORAGE_TAGGED) {
+		struct qbe_value qout = mkqval(ctx, out);
+		struct qbe_value qvoid_id = constw(builtin_type_void.id);
+		gen_store_tag(ctx, &qout, expr->result, &qvoid_id);
+	}
+
 	push(&ctx->current->body, &lend);
+	return gvout;
 }
 
 static void
@@ -3295,7 +3315,7 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 		gen_expr_delete(ctx, expr);
 		break;
 	case EXPR_FOR:
-		gen_expr_for(ctx, expr);
+		gen_expr_for_with(ctx, expr, NULL);
 		break;
 	case EXPR_FREE:
 		gen_expr_free(ctx, expr);
@@ -3374,6 +3394,9 @@ gen_expr_at(struct gen_context *ctx,
 		return;
 	case EXPR_COMPOUND:
 		gen_expr_compound_with(ctx, expr, &out);
+		return;
+	case EXPR_FOR:
+		gen_expr_for_with(ctx, expr, &out);
 		return;
 	case EXPR_LITERAL:
 		gen_expr_literal_at(ctx, expr, out);
