@@ -243,6 +243,7 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	case STORAGE_OPAQUE:
 	case STORAGE_NEVER:
 	case STORAGE_NOMEM:
+	case STORAGE_UNDEFINED:
 		abort(); // Invariant
 	}
 
@@ -304,6 +305,7 @@ qtype_lookup(struct gen_context *ctx,
 	case STORAGE_OPAQUE:
 	case STORAGE_VOID:
 	case STORAGE_DONE:
+	case STORAGE_UNDEFINED:
 		abort(); // Invariant
 	case STORAGE_FCONST:
 	case STORAGE_ICONST:
@@ -339,6 +341,7 @@ type_is_aggregate(const struct type *type)
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
 	case STORAGE_VOID:
+	case STORAGE_UNDEFINED:
 		return false;
 	case STORAGE_FUNCTION:
 		// Special case

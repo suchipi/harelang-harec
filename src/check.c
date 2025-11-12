@@ -367,6 +367,14 @@ check_expr_alloc_init(struct context *ctx,
 	}
 
 	const struct type *objtype = expr->alloc.init->result;
+	if (objtype->storage == STORAGE_UNDEFINED) {
+		if (!inithint) {
+			error(ctx, aexpr->loc, expr, "Cannot infer @undefined type without type hint");
+			return;
+		}
+		objtype = inithint;
+	}
+
 	if (type_dealias(ctx, objtype)->storage == STORAGE_ARRAY
 			&& type_dealias(ctx, objtype)->array.expandable) {
 		const struct type *atype = type_dealias(ctx, objtype);
@@ -401,7 +409,9 @@ check_expr_alloc_init(struct context *ctx,
 	expr->alloc.allocation_result = type_store_lookup_pointer(ctx,
 		aexpr->loc, objtype, nullable);
 
-	if (expr->alloc.init->result->size == SIZE_UNDEFINED) {
+	const struct type *initresult = expr->alloc.init->result;
+	if (initresult->storage != STORAGE_UNDEFINED
+			&& initresult->size == SIZE_UNDEFINED) {
 		error(ctx, aexpr->loc, expr,
 			"Cannot allocate object of undefined size");
 		return;
@@ -1080,6 +1090,7 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
+	case STORAGE_UNDEFINED:
 		return NULL;
 	// Handled above
 	case STORAGE_ALIAS:
@@ -1119,6 +1130,7 @@ type_has_default(struct context *ctx, const struct type *type)
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
 	case STORAGE_VOID:
+	case STORAGE_UNDEFINED:
 		return true;
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
@@ -1847,6 +1859,7 @@ check_expr_literal(struct context *ctx,
 	case STORAGE_TUPLE:
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
+	case STORAGE_UNDEFINED:
 	case STORAGE_VALIST:
 		assert(0); // Invariant
 	}
@@ -3078,8 +3091,9 @@ check_struct_exhaustive(struct context *ctx,
 			}
 		}
 
-		if (!found && (!aexpr->_struct.autofill
-					|| !type_has_default(ctx, sf->type))) {
+		bool has_default = type_has_default(ctx, sf->type)
+			|| aexpr->_struct.undefined;
+		if (!found && (!aexpr->_struct.autofill || !has_default)) {
 			error(ctx, aexpr->loc, expr,
 				"Field '%s' is uninitialized",
 				sf->name);
@@ -3129,6 +3143,7 @@ check_expr_struct(struct context *ctx,
 	struct ast_struct_union_field **tnext = &tfield->next;
 	struct expr_struct_field *sexpr, **snext = &expr->_struct.fields;
 	expr->_struct.autofill = aexpr->_struct.autofill;
+	expr->_struct.undefined = aexpr->_struct.undefined;
 	if (stype == NULL && expr->_struct.autofill) {
 		error(ctx, aexpr->loc, expr,
 				"Autofill is only permitted for named struct initializers");
@@ -3798,6 +3813,10 @@ check_expression(struct context *ctx,
 	case EXPR_UNARITHM:
 		check_expr_unarithm(ctx, aexpr, expr, hint);
 		break;
+	case EXPR_UNDEFINED:
+		expr->type = EXPR_UNDEFINED;
+		expr->result = &builtin_type_undefined;
+		break;
 	case EXPR_VAARG:
 		check_expr_vaarg(ctx, aexpr, expr, hint);
 		break;
@@ -4164,6 +4183,7 @@ check_exported_type(struct context *ctx,
 	case STORAGE_UINTPTR:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
+	case STORAGE_UNDEFINED:
 		break;
 	}
 }

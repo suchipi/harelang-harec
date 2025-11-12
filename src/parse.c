@@ -135,6 +135,7 @@ mkfuncparams(struct location loc)
 }
 
 static struct ast_expression *parse_statement(struct lexer *lexer);
+static struct ast_expression *parse_initializer(struct lexer *lexer);
 
 struct ident *
 parse_identifier(struct lexer *lexer, const char *name, bool *trailing)
@@ -832,6 +833,7 @@ parse_literal(struct lexer *lexer)
 	case STORAGE_STRUCT:
 	case STORAGE_TAGGED:
 	case STORAGE_TUPLE:
+	case STORAGE_UNDEFINED:
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 		assert(0); // Handled in a different nonterminal
@@ -859,7 +861,7 @@ parse_array_literal(struct lexer *lexer)
 		unlex(lexer, &tok);
 
 		item = *next = xcalloc(1, sizeof(struct ast_expression_list));
-		item->expr = parse_expression(lexer);
+		item->expr = parse_initializer(lexer);
 		next = &item->next;
 
 		switch (lex(lexer, &tok)) {
@@ -899,7 +901,7 @@ parse_field_value(struct lexer *lexer)
 			/* fallthrough */
 		case T_EQUAL:
 			exp->name = name;
-			exp->initializer = parse_expression(lexer);
+			exp->initializer = parse_initializer(lexer);
 			break;
 		default:
 			unlex(lexer, &tok);
@@ -928,6 +930,12 @@ parse_struct_literal(struct lexer *lexer, struct ident *ident)
 	struct token tok = {0};
 	while (tok.token != T_RBRACE) {
 		switch (lex(lexer, &tok)) {
+		case T_ATTR_UNDEFINED:
+			if (lex(lexer, &tok) != T_ELLIPSIS) {
+				synassert(ident != NULL, &tok, T_ELLIPSIS, T_EOF);
+			}
+			exp->_struct.undefined = true;
+			/* fallthrough */
 		case T_ELLIPSIS:
 			synassert(ident != NULL, &tok, T_RBRACE, T_EOF);
 			exp->_struct.autofill = true;
@@ -974,7 +982,7 @@ parse_tuple_expression(struct lexer *lexer, struct ast_expression *first)
 	tuple = tuple->next;
 
 	while (more) {
-		tuple->expr = parse_expression(lexer);
+		tuple->expr = parse_initializer(lexer);
 
 		switch (lex(lexer, &tok)) {
 		case T_RPAREN:
@@ -1228,7 +1236,7 @@ parse_allocation_expression(struct lexer *lexer)
 		exp->type = EXPR_ALLOC;
 		exp->alloc.kind = ALLOC_OBJECT;
 		want(lexer, T_LPAREN, NULL);
-		exp->alloc.init = parse_expression(lexer);
+		exp->alloc.init = parse_initializer(lexer);
 		switch (lex(lexer, &tok)) {
 		case T_COMMA:
 			// alloc(init, cap)
@@ -1276,7 +1284,7 @@ parse_append_insert(struct lexer *lexer, struct location loc,
 			"syntax error: expected indexing expression");
 	}
 	want(lexer, T_COMMA, NULL);
-	expr->append.value = parse_expression(lexer);
+	expr->append.value = parse_initializer(lexer);
 	expr->append.is_static = is_static;
 
 	switch (lex(lexer, &tok)) {
@@ -2171,7 +2179,7 @@ parse_binding_list(struct lexer *lexer, bool is_static)
 			synerr(&tok, T_COLON, T_EQUAL, T_EOF);
 		}
 
-		binding->initializer = parse_expression(lexer);
+		binding->initializer = parse_initializer(lexer);
 
 		if (lex(lexer, &tok) == T_COMMA) {
 			binding->next = xcalloc(1, sizeof *binding->next);
@@ -2321,6 +2329,7 @@ struct ast_expression *
 parse_expression(struct lexer *lexer)
 {
 	struct token tok;
+	struct ast_expression *value;
 	switch (lex(lexer, &tok)) {
 	case T_STATIC:
 		return parse_static_expression(lexer, false);
@@ -2342,7 +2351,7 @@ parse_expression(struct lexer *lexer)
 	}
 
 	unlex(lexer, &tok);
-	struct ast_expression *value = parse_unary_expression(lexer);
+	value = parse_unary_expression(lexer);
 	if (value->type != EXPR_ACCESS && value->type != EXPR_SLICE
 			&& (value->type != EXPR_UNARITHM
 				|| value->unarithm.op != UN_DEREF)) {
@@ -2386,6 +2395,24 @@ parse_expression(struct lexer *lexer)
 		value = parse_bin_expression(lexer, value, 0);
 		return value;
 	}
+}
+
+static struct ast_expression *
+parse_initializer(struct lexer *lexer)
+{
+	struct token tok;
+	struct ast_expression *expr;
+	switch (lex(lexer, &tok)) {
+	case T_ATTR_UNDEFINED:
+		expr = mkexpr(lexer->loc);
+		expr->type = EXPR_UNDEFINED;
+		return expr;
+	default:
+		unlex(lexer, &tok);
+		break;
+	}
+
+	return parse_expression(lexer);
 }
 
 static struct ast_expression *
@@ -2459,7 +2486,7 @@ parse_global_decl(struct lexer *lexer, enum lexical_token mode,
 			}
 			/* fallthrough */
 		case T_EQUAL:
-			i->init = parse_expression(lexer);
+			i->init = parse_initializer(lexer);
 			break;
 		default:
 			synerr(&tok, T_EQUAL, T_COLON, T_EOF);

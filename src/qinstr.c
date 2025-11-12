@@ -81,6 +81,7 @@ store_for_type(struct gen_context *ctx, const struct type *type)
 	case STORAGE_STRUCT:
 	case STORAGE_TAGGED:
 	case STORAGE_TUPLE:
+	case STORAGE_UNDEFINED:
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
@@ -155,6 +156,7 @@ load_for_type(struct gen_context *ctx, const struct type *type)
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
 	case STORAGE_DONE:
+	case STORAGE_UNDEFINED:
 		abort(); // Invariant
 	}
 	abort(); // Unreachable

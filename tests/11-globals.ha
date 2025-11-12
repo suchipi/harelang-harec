@@ -97,6 +97,8 @@ fn storage() void = {
 	assert(double == 1234.5678);
 };
 
+let undef: int = @undefined;
+
 fn invalid() void = {
 	compile(status::CHECK, "fn test() int; let x: int = test();")!;
 	compile(status::CHECK, "const a: u8 = 2; const b: u8 = a + 5;")!;
@@ -115,6 +117,9 @@ fn invalid() void = {
 
 	compile(status::CHECK, "let a = [];")!;
 	compile(status::CHECK, "def a = [];")!;
+
+	// Undefined value without type
+	compile(status::CHECK, "let a = @undefined;")!;
 };
 
 fn counter() int = {

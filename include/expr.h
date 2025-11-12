@@ -38,6 +38,7 @@ enum expr_type {
 	EXPR_SWITCH,
 	EXPR_TUPLE,
 	EXPR_UNARITHM,
+	EXPR_UNDEFINED,
 	EXPR_VAARG,
 	EXPR_VAEND,
 	EXPR_VASTART,
@@ -335,7 +336,7 @@ struct expr_struct_field {
 
 struct expression_struct {
 	struct expr_struct_field *fields;
-	bool autofill;
+	bool autofill, undefined;
 };
 
 struct expression_tuple {

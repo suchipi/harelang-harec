@@ -36,6 +36,10 @@ fn allocation() void = {
 	let a: *const my_u32 = alloc(1234u32)!;
 	assert(*a == 1234);
 	free(a);
+
+	let q: *int = alloc(@undefined)!;
+	*q = 1337;
+	free(q);
 };
 
 fn failure() (void | nomem_alias) = {

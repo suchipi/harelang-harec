@@ -182,6 +182,15 @@ fn named() void = {
 	assert(x.x == 20 && x.y == 10);
 };
 
+type undef_test = struct {
+	x: int,
+	// Has no default value:
+	y: (int | void),
+};
+
+let undef = undef_test { @undefined... };
+let undef2 = undef_test { x = 10, @undefined... };
+
 type offset_test = struct {
 	a: int,
 	b: void,

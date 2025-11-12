@@ -96,6 +96,8 @@ builtin_type_for_storage(enum type_storage storage)
 		return &builtin_type_null;
 	case STORAGE_STRING:
 		return &builtin_type_str;
+	case STORAGE_UNDEFINED:
+		return &builtin_type_undefined;
 	case STORAGE_ALIAS:
 	case STORAGE_ARRAY:
 	case STORAGE_FUNCTION:
@@ -760,6 +762,7 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_U64:
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
+	case STORAGE_UNDEFINED:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
 		builtin = builtin_type_for_storage(type->storage);

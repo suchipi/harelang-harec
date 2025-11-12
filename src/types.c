@@ -226,6 +226,8 @@ type_storage_unparse(enum type_storage storage)
 		return "uintptr";
 	case STORAGE_UNION:
 		return "union";
+	case STORAGE_UNDEFINED:
+		return "undefined";
 	case STORAGE_VALIST:
 		return "valist";
 	case STORAGE_VOID:
@@ -262,6 +264,7 @@ type_is_integer(struct context *ctx, const struct type *type)
 	case STORAGE_F64:
 	case STORAGE_FCONST:
 	case STORAGE_VALIST:
+	case STORAGE_UNDEFINED:
 		return false;
 	case STORAGE_ENUM:
 	case STORAGE_ERROR:
@@ -308,6 +311,7 @@ type_is_numeric(struct context *ctx, const struct type *type)
 	case STORAGE_RUNE:
 	case STORAGE_NULL:
 	case STORAGE_VALIST:
+	case STORAGE_UNDEFINED:
 		return false;
 	case STORAGE_ERROR:
 	case STORAGE_ENUM:
@@ -366,7 +370,6 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_STRUCT:
 	case STORAGE_TAGGED:
 	case STORAGE_TUPLE:
-	case STORAGE_UNION:
 	case STORAGE_BOOL:
 	case STORAGE_RCONST:
 	case STORAGE_RUNE:
@@ -378,6 +381,8 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_U64:
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
+	case STORAGE_UNION:
+	case STORAGE_UNDEFINED:
 	case STORAGE_VALIST:
 		return false;
 	case STORAGE_I8:
@@ -433,6 +438,7 @@ type_hash(const struct type *type)
 	case STORAGE_U64:
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
+	case STORAGE_UNDEFINED:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
 	case STORAGE_DONE:
@@ -837,7 +843,9 @@ type_is_assignable(struct context *ctx,
 		return true;
 	}
 
-	if (from->storage == STORAGE_ERROR || from->storage == STORAGE_NEVER) {
+	if (from->storage == STORAGE_ERROR
+			|| from->storage == STORAGE_NEVER
+			|| from->storage == STORAGE_UNDEFINED) {
 		return true;
 	}
 
@@ -968,6 +976,7 @@ type_is_assignable(struct context *ctx,
 	case STORAGE_VALIST:
 		return false;
 	case STORAGE_ERROR:
+	case STORAGE_UNDEFINED:
 		return true;
 	}
 
@@ -1003,6 +1012,8 @@ const struct type *
 type_is_castable(struct context *ctx, const struct type *to, const struct type *from)
 {
 	if (to->storage == STORAGE_ERROR) {
+		return to;
+	} else if (to->storage == STORAGE_UNDEFINED) {
 		return to;
 	}
 
@@ -1119,6 +1130,7 @@ type_is_castable(struct context *ctx, const struct type *to, const struct type *
 	case STORAGE_ERROR:
 	case STORAGE_TAGGED:
 	case STORAGE_ALIAS:
+	case STORAGE_UNDEFINED:
 		assert(0); // Handled above
 	}
 
@@ -1310,4 +1322,9 @@ builtin_type_str = {
 },
 builtin_type_valist = {
 	.storage = STORAGE_VALIST,
+},
+builtin_type_undefined = {
+	.storage = STORAGE_UNDEFINED,
+	.align = ALIGN_UNDEFINED,
+	.size = SIZE_UNDEFINED,
 };

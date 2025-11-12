@@ -126,6 +126,7 @@ itrunc(struct context *ctx, const struct type *type, uint64_t val)
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
+	case STORAGE_UNDEFINED:
 		assert(0);
 	}
 	assert(0);
@@ -501,6 +502,7 @@ eval_literal(struct context *ctx,
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
 	case STORAGE_VALIST:
+	case STORAGE_UNDEFINED:
 		abort(); // Invariant
 	}
 	return true;
@@ -585,6 +587,10 @@ eval_cast(struct context *ctx,
 	}
 
 	if (from->storage == STORAGE_ERROR) {
+		return true;
+	} else if (from->storage == STORAGE_UNDEFINED) {
+		out->type = EXPR_UNDEFINED;
+		out->result = to;
 		return true;
 	} else if (from->storage == STORAGE_TAGGED) {
 		out->literal = val.literal.tagged.value->literal;
@@ -689,6 +695,7 @@ eval_cast(struct context *ctx,
 	case STORAGE_ERROR:
 	case STORAGE_NOMEM:
 	case STORAGE_VOID:
+	case STORAGE_UNDEFINED:
 		return true;
 	}
 
@@ -764,6 +771,7 @@ literal_default(struct context *ctx, struct expression *v)
 	case STORAGE_RUNE:
 	case STORAGE_SLICE:
 	case STORAGE_BOOL:
+	case STORAGE_UNDEFINED:
 		break; // calloc does this for us
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
@@ -851,14 +859,19 @@ count_struct_fields(struct context *ctx, const struct type *type)
 }
 
 static bool
-autofill_struct(struct context *ctx, const struct type *type, struct struct_literal **fields)
-{
+autofill_struct(
+	struct context *ctx,
+	const struct type *type,
+	struct struct_literal **fields,
+	bool undefined
+) {
 	assert(type->storage == STORAGE_STRUCT || type->storage == STORAGE_UNION);
 	for (const struct struct_field *field = type->struct_union.fields;
 			field; field = field->next) {
 		if (!field->name) {
 			bool r = autofill_struct(ctx,
-				type_dealias(ctx, field->type), fields);
+				type_dealias(ctx, field->type),
+				fields, undefined);
 			if (!r) {
 				return false;
 			}
@@ -876,12 +889,16 @@ autofill_struct(struct context *ctx, const struct type *type, struct struct_lite
 			fields[i] = xcalloc(1, sizeof(struct struct_literal));
 			fields[i]->field = field;
 			fields[i]->value = xcalloc(1, sizeof(struct expression));
-			fields[i]->value->type = EXPR_LITERAL;
 			fields[i]->value->result = field->type;
-			// TODO: there should probably be a better error message
-			// when this happens
 			if (!literal_default(ctx, fields[i]->value)) {
-				return false;
+				// TODO: there should probably be a better
+				// error message when this happens
+				if (!undefined) {
+					return false;
+				}
+				fields[i]->value->type = EXPR_UNDEFINED;
+			} else {
+				fields[i]->value->type = EXPR_LITERAL;
 			}
 		}
 	}
@@ -919,7 +936,7 @@ eval_struct(struct context *ctx,
 	assert(in->_struct.autofill || i == n);
 
 	if (in->_struct.autofill) {
-		if (!autofill_struct(ctx, type, fields)) {
+		if (!autofill_struct(ctx, type, fields, in->_struct.undefined)) {
 			return false;
 		}
 	}
@@ -1246,6 +1263,10 @@ eval_expr(struct context *ctx,
 		return eval_tuple(ctx, in, out);
 	case EXPR_UNARITHM:
 		return eval_unarithm(ctx, in, out);
+	case EXPR_UNDEFINED:
+		out->type = EXPR_UNDEFINED;
+		out->result = &builtin_type_undefined;
+		return true;
 	case EXPR_ALLOC:
 	case EXPR_APPEND:
 	case EXPR_ASSERT:

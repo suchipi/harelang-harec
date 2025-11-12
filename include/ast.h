@@ -325,6 +325,7 @@ struct ast_field_value {
 
 struct ast_expression_struct {
 	bool autofill;
+	bool undefined;
 	struct ident *type;
 	struct ast_field_value *fields;
 };

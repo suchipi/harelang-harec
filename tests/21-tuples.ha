@@ -246,6 +246,10 @@ fn _never() void = {
 	{ let (y, z): (int, int) = (yield, 1); };
 };
 
+fn undefined() void = {
+	let x: (int, int) = (1337, @undefined);
+};
+
 export fn main() void = {
 	storage();
 	indexing();
@@ -259,4 +263,5 @@ export fn main() void = {
 	reject();
 	_never();
 	trailing_comma();
+	undefined();
 };

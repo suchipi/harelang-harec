@@ -202,6 +202,7 @@ emit_literal(const struct expression *expr, FILE *out)
 		break;
 	case STORAGE_OPAQUE:
 	case STORAGE_VALIST:
+	case STORAGE_UNDEFINED:
 		assert(0); // Invariant
 	}
 }
@@ -259,6 +260,7 @@ emit_type(const struct type *type, FILE *out)
 	case STORAGE_UINTPTR:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
+	case STORAGE_UNDEFINED:
 		xfprintf(out, "%s", type_storage_unparse(type->storage));
 		break;
 	case STORAGE_POINTER:
