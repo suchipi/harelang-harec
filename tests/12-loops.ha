@@ -570,6 +570,9 @@ fn for_else() void = {
 
 	let x = for (true) if (true) break 1 else break 2;
 	assert(x == 1);
+
+	// This form tests gen_expr, instead of gen_expr_with.
+	assert(for (let i .. [1, 2]) { if (i == 2) break true; } else false);
 };
 
 export fn main() void = {

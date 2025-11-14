@@ -3332,7 +3332,7 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 		gen_expr_delete(ctx, expr);
 		break;
 	case EXPR_FOR:
-		gen_expr_for_with(ctx, expr, NULL);
+		out = gen_expr_for_with(ctx, expr, NULL);
 		break;
 	case EXPR_FREE:
 		gen_expr_free(ctx, expr);
