@@ -42,8 +42,6 @@ const char *ident_to_sym(struct intern_table *itbl, const struct ident *ident);
 
 void intern_init(struct intern_table *itbl);
 
-void intern_init(struct intern_table *itbl);
-
 const char *intern_copy(struct intern_table *itbl, const char *s);
 const char *intern_owned(struct intern_table *itbl, char *s);
 
