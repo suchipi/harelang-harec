@@ -93,6 +93,10 @@ fn control_never2() (int | void) = {
 	};
 };
 
+fn for_each1() (int | void) = for (true) void;
+fn for_each2() (int | void) = for (false) void;
+fn for_each3() (int | void) = for (false) void else void;
+
 export fn main() void = {
 	let t = thing {
 		offs = 0,

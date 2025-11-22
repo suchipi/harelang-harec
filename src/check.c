@@ -2302,14 +2302,21 @@ check_expr_for(struct context *ctx,
 	scope_pop(&ctx->scope);
 
 	// The else branch is not evaluated in the loop scope.
+	expr->_for.else_branch = xcalloc(1, sizeof(struct expression));
 	if (aexpr->_for.else_branch) {
-		expr->_for.else_branch = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, aexpr->_for.else_branch,
 			expr->_for.else_branch, hint);
-		if (expr->result != &builtin_type_never) {
-			expr->result = expr->_for.else_branch->result;
-		}
+	} else {
+		expr->_for.else_branch->type = EXPR_LITERAL;
+		expr->_for.else_branch->result = &builtin_type_void;
 	}
+	// Check this later, because we should unconditionally typecheck the
+	// else branch
+	if (expr->result != &builtin_type_never) {
+		expr->result = expr->_for.else_branch->result;
+	} else {
+		expr->_for.else_branch = NULL;
+	};
 
 	// If every possible result type is assignable to the hint, just set the
 	// hint as the result type.
@@ -2326,7 +2333,11 @@ check_expr_for(struct context *ctx,
 		assignable_to_hint = false;
 	}
 	if (assignable_to_hint) {
-		expr->result = hint;
+		// If we were going to end up with `never` as our result, keep
+		// it regardless of the hint
+		if (scope->results || expr->_for.else_branch) {
+			expr->result = hint;
+		}
 	} else {
 		struct type_tagged_union *tu = xcalloc(1,
 			sizeof(struct type_tagged_union));
@@ -2343,6 +2354,10 @@ check_expr_for(struct context *ctx,
 		struct yield *next = yield->next;
 		free(yield);
 		yield = next;
+	}
+	if (expr->_for.else_branch) {
+		expr->_for.else_branch =
+			lower_implicit_cast(ctx, expr->result, expr->_for.else_branch);
 	}
 }
 

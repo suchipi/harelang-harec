@@ -2406,10 +2406,8 @@ gen_expr_for_with(struct gen_context *ctx, const struct expression *expr,
 
 	if (expr->_for.else_branch) {
 		gen_expr_branch(ctx, expr->_for.else_branch, gvout, out);
-	} else if (out && expr->result->storage == STORAGE_TAGGED) {
-		struct qbe_value qout = mkqval(ctx, out);
-		struct qbe_value qvoid_id = constw(builtin_type_void.id);
-		gen_store_tag(ctx, &qout, expr->result, &qvoid_id);
+	} else {
+		pushi(ctx->current, NULL, Q_HLT, NULL);
 	}
 
 	push(&ctx->current->body, &lend);
