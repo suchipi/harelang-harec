@@ -3285,7 +3285,7 @@ gen_expr(struct gen_context *ctx, const struct expression *expr)
 	}
 
 	struct gen_value out = gv_void;
-	switch ((int)expr->type) {
+	switch (expr->type) {
 	case EXPR_ACCESS:
 		out = gen_expr_access(ctx, expr);
 		break;
