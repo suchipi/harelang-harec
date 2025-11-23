@@ -502,7 +502,8 @@ tagged_cmp(const void *ptr_a, const void *ptr_b)
 }
 
 static void
-tagged_init(struct type *type, struct type_tagged_union **tu, size_t nmemb)
+tagged_init(struct context *ctx, struct location loc, struct type *type,
+	struct type_tagged_union **tu, size_t nmemb)
 {
 	// Sort by ID
 	qsort(tu, nmemb, sizeof(tu[0]), tagged_cmp);
@@ -512,6 +513,11 @@ tagged_init(struct type *type, struct type_tagged_union **tu, size_t nmemb)
 	for (size_t i = 1; i < nmemb; ++i) {
 		if (tu[i]->type->id != tu[nmemb_dedup - 1]->type->id) {
 			tu[nmemb_dedup++] = tu[i];
+		} else if (!type_equal(tu[i]->type, tu[nmemb_dedup - 1]->type)) {
+			char *first_name = gen_typename(tu[nmemb_dedup - 1]->type);
+			char *second_name = gen_typename(tu[i]->type);
+			error(ctx, loc, NULL, "Hash collision between %s and %s",
+				first_name, second_name);
 		}
 	}
 	nmemb = nmemb_dedup;
@@ -551,7 +557,7 @@ tagged_init_from_atype(struct context *ctx,
 		xcalloc(nmemb, sizeof(struct type_tagged_union *));
 	size_t i = 0;
 	collect_atagged_memb(ctx, tu, &atype->tagged, &i);
-	tagged_init(type, tu, i);
+	tagged_init(ctx, atype->loc, type, tu, i);
 	if (!enforce_tagged_invariants(ctx, atype->loc, type)) {
 		*type = builtin_type_error;
 	}
@@ -1003,6 +1009,10 @@ type_store_lookup_type(struct context *ctx, const struct type *type)
 	while (*next) {
 		bucket = *next;
 		if (bucket->type.id == hash) {
+			if (!type_equal(&bucket->type, type)) {
+				next = &bucket->next;
+				continue;
+			}
 			if (bucket->type.storage == STORAGE_ALIAS) {
 				type = type->alias.type;
 				bucket->type.alias.type = type;
@@ -1191,7 +1201,7 @@ lookup_tagged(struct context *ctx, struct type_tagged_union *tags)
 		xcalloc(nmemb, sizeof(struct type_tagged_union *));
 	size_t i = 0;
 	collect_tagged_memb(ctx, tu, tags, &i);
-	tagged_init(ret, tu, nmemb);
+	tagged_init(ctx, (struct location){ 0 }, ret, tu, nmemb);
 	return ret;
 }
 
