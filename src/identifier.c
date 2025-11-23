@@ -5,6 +5,19 @@
 #include "identifier.h"
 #include "util.h"
 
+bool
+ident_equal(const struct ident *a, const struct ident *b)
+{
+	while (a && b) {
+		if (strcmp(a->name, b->name)) {
+			return false;
+		}
+		a = a->ns;
+		b = b->ns;
+	}
+	return !a && !b;
+}
+
 uint32_t
 ident_hash(uint32_t init, const struct ident *ident)
 {

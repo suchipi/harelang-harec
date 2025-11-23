@@ -35,6 +35,7 @@ struct intern_table {
 	struct bucket *ibuckets;
 };
 
+bool ident_equal(const struct ident *a, const struct ident *b);
 uint32_t ident_hash(uint32_t init, const struct ident *ident);
 char *ident_unparse(const struct ident *ident);
 int ident_unparse_static(const struct ident *ident, char *buf);
