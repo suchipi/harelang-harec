@@ -508,6 +508,132 @@ type_hash(const struct type *type)
 	return hash;
 }
 
+bool
+type_equal(const struct type *a, const struct type *b)
+{
+	if (a->storage != b->storage) {
+		return false;
+	}
+
+	switch (a->storage) {
+	case STORAGE_BOOL:
+	case STORAGE_DONE:
+	case STORAGE_F32:
+	case STORAGE_F64:
+	case STORAGE_I16:
+	case STORAGE_I32:
+	case STORAGE_I64:
+	case STORAGE_I8:
+	case STORAGE_INT:
+	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
+	case STORAGE_NULL:
+	case STORAGE_OPAQUE:
+	case STORAGE_RUNE:
+	case STORAGE_SIZE:
+	case STORAGE_STRING:
+	case STORAGE_U16:
+	case STORAGE_U32:
+	case STORAGE_U64:
+	case STORAGE_U8:
+	case STORAGE_UINT:
+	case STORAGE_UINTPTR:
+	case STORAGE_UNDEFINED:
+	case STORAGE_VOID:
+	case STORAGE_ERROR:
+	case STORAGE_VALIST:
+		return true;
+	case STORAGE_ALIAS:
+	case STORAGE_ENUM:
+		return ident_equal(a->alias.ident, b->alias.ident);
+	case STORAGE_ARRAY:
+	case STORAGE_SLICE:
+		return a->array.length == b->array.length
+			&& a->array.expandable == b->array.expandable
+			&& type_equal(a->array.members, b->array.members);
+	case STORAGE_FUNCTION:
+		if (!type_equal(a->func.result, b->func.result)) {
+			return false;
+		}
+		if (a->func.variadism != b->func.variadism) {
+			return false;
+		}
+		const struct type_func_param *param_a = a->func.params;
+		const struct type_func_param *param_b = b->func.params;
+		while (param_a && param_b) {
+			if (!type_equal(param_a->type, param_b->type)) {
+				return false;
+			}
+			if (param_a->default_value || param_b->default_value) {
+				if (!param_a->default_value
+						|| !param_b->default_value) {
+					return false;
+				}
+				if (!expr_equal(param_a->default_value,
+						param_b->default_value)) {
+					return false;
+				}
+			}
+			param_a = param_a->next;
+			param_b = param_b->next;
+		}
+		return !param_a && !param_b;
+	case STORAGE_POINTER:
+		return a->pointer.nullable == b->pointer.nullable
+			&& type_equal(a->pointer.referent, b->pointer.referent);
+	case STORAGE_STRUCT:
+	case STORAGE_UNION:;
+		const struct struct_field *field_a = a->struct_union.fields;
+		const struct struct_field *field_b = b->struct_union.fields;
+		while (field_a && field_b) {
+			if (field_a->name || field_b->name) {
+				if (!field_a->name || !field_b->name) {
+					return false;
+				}
+				if (strcmp(field_a->name, field_b->name)) {
+					return false;
+				}
+			}
+			if (!type_equal(field_a->type, field_b->type)) {
+				return false;
+			}
+			if (field_a->offset != field_b->offset) {
+				return false;
+			}
+			field_a = field_a->next;
+			field_b = field_b->next;
+		}
+		return !field_a && !field_b;
+	case STORAGE_TAGGED:;
+		const struct type_tagged_union *tagged_a = &a->tagged;
+		const struct type_tagged_union *tagged_b = &b->tagged;
+		while (tagged_a && tagged_b) {
+			if (!type_equal(tagged_a->type, tagged_b->type)) {
+				return false;
+			}
+			tagged_a = tagged_a->next;
+			tagged_b = tagged_b->next;
+		}
+		return !tagged_a && !tagged_b;
+	case STORAGE_TUPLE:;
+		const struct type_tuple *tuple_a = &a->tuple;
+		const struct type_tuple *tuple_b = &b->tuple;
+		while (tuple_a && tuple_b) {
+			if (!type_equal(tuple_a->type, tuple_b->type)) {
+				return false;
+			}
+			tuple_a = tuple_a->next;
+			tuple_b = tuple_b->next;
+		}
+		return !tuple_a && !tuple_b;
+	case STORAGE_FCONST:
+	case STORAGE_ICONST:
+	case STORAGE_RCONST:
+		return a == b;
+	}
+	assert(0); // Unreachable
+}
+
 // Note that the type this returns is NOT a type singleton and cannot be treated
 // as such.
 static const struct type *

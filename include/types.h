@@ -177,6 +177,7 @@ bool type_is_flexible(const struct type *type);
 bool type_has_error(struct context *ctx, const struct type *type);
 
 uint32_t type_hash(const struct type *type);
+bool type_equal(const struct type *a, const struct type *b);
 
 const struct type *promote_flexible(struct context *ctx,
 	const struct type *a, const struct type *b);
