@@ -397,5 +397,6 @@ struct expression {
 };
 
 uint32_t expr_hash(const struct expression *expr);
+bool expr_equal(const struct expression *a, const struct expression *b);
 
 #endif
