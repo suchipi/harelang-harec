@@ -917,7 +917,7 @@ type_is_assignable(struct context *ctx,
 		assert(to->alias.type);
 		return type_is_assignable(ctx, to->alias.type, from);
 	case STORAGE_VOID:
-		return to_orig->id == from_orig->id &&
+		return to->id == from->id &&
 			(from_orig->flags & TYPE_ERROR)	== (to_orig->flags & TYPE_ERROR);
 	case STORAGE_SLICE:
 		if (from->storage == STORAGE_POINTER) {
