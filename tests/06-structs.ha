@@ -283,6 +283,7 @@ fn invariants() void = {
 	// embedding a non-alias type
 	compile(status::PARSE, "type t = struct { u8, x: int };")!;
 	compile(status::PARSE, "type t = struct { x: int, u8};")!;
+	compile(status::PARSE, "type t = union @packed { x: u32, y: str };")!;
 
 	const failures = [
 	// Assign field from non-assignable type:
@@ -371,9 +372,6 @@ fn invariants() void = {
 	"type foo = struct { x: int, y: bar };"
 	"type bar = enum { A = 1, B, C = -1 };"
 	"fn test() void = { let x = foo { x = 0, ... }; };",
-
-	// @packed union
-	"type foo = union @packed { x: u32, y: str };",
 	];
 	for (let i = 0z; i < len(failures); i += 1) {
 		compile(status::CHECK, failures[i])!;

@@ -485,6 +485,7 @@ parse_struct_union_type(struct lexer *lexer)
 	switch (lex(lexer, &tok)) {
 	case T_STRUCT:
 		type->storage = STORAGE_STRUCT;
+		type->struct_union.packed = try(lexer, T_ATTR_PACKED);
 		break;
 	case T_UNION:
 		type->storage = STORAGE_UNION;
@@ -493,7 +494,6 @@ parse_struct_union_type(struct lexer *lexer)
 		synerr(&tok, T_STRUCT, T_UNION, T_EOF);
 		break;
 	}
-	type->struct_union.packed = try(lexer, T_ATTR_PACKED);
 	want(lexer, T_LBRACE, NULL);
 	while (tok.token != T_RBRACE) {
 		switch (lex(lexer, &tok)) {

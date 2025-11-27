@@ -307,11 +307,6 @@ struct_init_from_atype(struct context *ctx, struct type *type,
 	const struct ast_type *atype, bool size_only)
 {
 	// TODO: fields with size SIZE_UNDEFINED
-	if (type->storage == STORAGE_UNION && atype->struct_union.packed) {
-		error(ctx, atype->loc, NULL,
-				"Cannot use @packed attribute for union type");
-		return false;
-	}
 	type->struct_union.packed = atype->struct_union.packed;
 
 	size_t offset = 0;
