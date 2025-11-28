@@ -60,7 +60,7 @@ struct scope {
 	struct scope *parent;
 
 	const struct type *hint;
-	struct type_tagged_union *results;
+	struct type_tagged_union results;
 	struct yield *yields;
 
 	// Linked list in insertion order

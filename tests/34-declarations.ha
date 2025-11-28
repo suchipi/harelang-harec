@@ -332,9 +332,9 @@ type unwrap_A1 = ([32]u8 | void | str);
 type unwrap_A2 = (i64 | ...unwrap_A1);
 type unwrap_alias_A1 = unwrap_A2;
 type unwrap_alias_A2 = unwrap_alias_A1;
-type unwrap_alias_A3 = ...unwrap_alias_A2;
+type unwrap_alias_A3 = (int | ...unwrap_alias_A2);
 // reverse
-type unwrap_alias_B3 = ...unwrap_alias_B2;
+type unwrap_alias_B3 = (int | ...unwrap_alias_B2);
 type unwrap_alias_B2 = unwrap_alias_B1;
 type unwrap_alias_B1 = unwrap_B2;
 type unwrap_B2 = (i64 | ...unwrap_B1);

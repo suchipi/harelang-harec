@@ -15,13 +15,13 @@ tagged_qtype(struct gen_context *ctx,
 
 	// Identify maximum alignment among members
 	size_t maxalign = 0, minalign = SIZE_MAX;
-	for (const struct type_tagged_union *tu = &type->tagged;
-			tu; tu = tu->next) {
-		if (maxalign < tu->type->align) {
-			maxalign = tu->type->align;
+	for (size_t i = 0; i < type->tagged.len; i++) {
+		const struct type *t = type->tagged.types[i];
+		if (maxalign < t->align) {
+			maxalign = t->align;
 		}
-		if (minalign > tu->type->align) {
-			minalign = tu->type->align;
+		if (minalign > t->align) {
+			minalign = t->align;
 		}
 	}
 
@@ -29,9 +29,9 @@ tagged_qtype(struct gen_context *ctx,
 	struct qbe_field *field = &def->type.fields;
 	for (size_t align = 1; align <= 8; align <<= 1) {
 		size_t nalign = 0;
-		for (const struct type_tagged_union *tu = &type->tagged;
-				tu; tu = tu->next) {
-			if (tu->type->align != align || tu->type->size == 0) {
+		for (size_t i = 0; i < type->tagged.len; i++) {
+			const struct type *t = type->tagged.types[i];
+			if (t->align != align || t->size == 0) {
 				continue;
 			}
 			++nalign;
@@ -62,13 +62,13 @@ tagged_qtype(struct gen_context *ctx,
 
 		size_t nfield = 0;
 		struct qbe_field *bfield = &values->type.fields;
-		for (const struct type_tagged_union *tu = &type->tagged;
-				tu; tu = tu->next) {
-			if (tu->type->align != align || tu->type->size == 0) {
+		for (size_t i = 0; i < type->tagged.len; i++) {
+			const struct type *t = type->tagged.types[i];
+			if (t->align != align || t->size == 0) {
 				continue;
 			}
 
-			bfield->type = qtype_lookup(ctx, tu->type, true);
+			bfield->type = qtype_lookup(ctx, t, true);
 			bfield->count = 1;
 			if (++nfield < nalign) {
 				bfield->next = xcalloc(1, sizeof(struct qbe_field));

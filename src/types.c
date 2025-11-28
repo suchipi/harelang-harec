@@ -143,9 +143,8 @@ type_has_error(struct context *ctx, const struct type *type)
 	if (type->storage != STORAGE_TAGGED) {
 		return false;
 	}
-	const struct type_tagged_union *tu = &type->tagged;
-	for (; tu; tu = tu->next) {
-		if (tu->type->flags & TYPE_ERROR) {
+	for (size_t i = 0; i < type->tagged.len; i++) {
+		if (type->tagged.types[i]->flags & TYPE_ERROR) {
 			return true;
 		}
 	}
@@ -493,9 +492,8 @@ type_hash(const struct type *type)
 	case STORAGE_TAGGED:
 		// Invariant: subtypes must be sorted by ID and must not include
 		// any other tagged union types, nor any duplicates.
-		for (const struct type_tagged_union *tu = &type->tagged;
-				tu; tu = tu->next) {
-			hash = fnv1a_u32(hash, type_hash(tu->type));
+		for (size_t i = 0; i < type->tagged.len; i++) {
+			hash = fnv1a_u32(hash, type_hash(type->tagged.types[i]));
 		}
 		break;
 	case STORAGE_TUPLE:
@@ -604,17 +602,16 @@ type_equal(const struct type *a, const struct type *b)
 			field_b = field_b->next;
 		}
 		return !field_a && !field_b;
-	case STORAGE_TAGGED:;
-		const struct type_tagged_union *tagged_a = &a->tagged;
-		const struct type_tagged_union *tagged_b = &b->tagged;
-		while (tagged_a && tagged_b) {
-			if (!type_equal(tagged_a->type, tagged_b->type)) {
+	case STORAGE_TAGGED:
+		if (a->tagged.len != b->tagged.len) {
+			return false;
+		}
+		for (size_t i = 0; i < a->tagged.len; i++) {
+			if (!type_equal(a->tagged.types[i], b->tagged.types[i])) {
 				return false;
 			}
-			tagged_a = tagged_a->next;
-			tagged_b = tagged_b->next;
 		}
-		return !tagged_a && !tagged_b;
+		return true;
 	case STORAGE_TUPLE:;
 		const struct type_tuple *tuple_a = &a->tuple;
 		const struct type_tuple *tuple_b = &b->tuple;
@@ -648,21 +645,31 @@ strip_flags(const struct type *t, struct type *secondary)
 	return secondary;
 }
 
+void
+tagged_append(struct type_tagged_union *tagged, const struct type *memb)
+{
+	if (tagged->len == tagged->cap) {
+		tagged->cap++;
+		tagged->cap *= 2;
+		tagged->types = xrealloc(tagged->types,
+			tagged->cap * sizeof(struct type *));
+	}
+	assert(tagged->len < tagged->cap);
+	tagged->types[tagged->len] = memb;
+	tagged->len++;
+}
+
 // Duplicate and return the tags of a tagged union
-struct type_tagged_union *
+struct type_tagged_union
 tagged_dup_tags(const struct type_tagged_union *tags)
 {
-	struct type_tagged_union *ret = xcalloc(1, sizeof(struct type_tagged_union));
-	struct type_tagged_union *cur_ret = ret;
-
-	for (const struct type_tagged_union *tu = tags; tu; tu = tu->next) {
-		if (cur_ret->type != NULL) {
-			cur_ret->next = xcalloc(1, sizeof(struct type_tagged_union));
-			cur_ret = cur_ret->next;
-		}
-		cur_ret->type = tu->type;
-	}
-	return ret;
+	const struct type **types = xcalloc(tags->len, sizeof(struct type *));
+	memcpy(types, tags->types, tags->len * sizeof(struct type *));
+	return (struct type_tagged_union){
+		.types = types,
+		.len = tags->len,
+		.cap = tags->len,
+	};
 }
 
 const struct type *
@@ -677,26 +684,25 @@ tagged_select_subtype(struct context *ctx, const struct type *tagged,
 
 	size_t nassign = 0;
 	const struct type *selected = NULL;
-	for (const struct type_tagged_union *tu = &tagged->tagged;
-			tu; tu = tu->next) {
-		if (tu->type->id == subtype->id) {
-			return tu->type;
+	for (size_t i = 0; i < tagged->tagged.len; i++) {
+		const struct type *t = tagged->tagged.types[i];
+		if (t->id == subtype->id) {
+			return t;
 		}
 
-		if (type_is_assignable(ctx, tu->type, subtype)) {
-			selected = tu->type;
+		if (type_is_assignable(ctx, t, subtype)) {
+			selected = t;
 			++nassign;
 		}
 	}
 
 	if (strip) {
-		for (const struct type_tagged_union *tu = &tagged->tagged;
-				tu; tu = tu->next) {
+		for (size_t i = 0; i < tagged->tagged.len; i++) {
 			struct type _tustripped;
-			const struct type *tustripped =
-				strip_flags(tu->type, &_tustripped);
+			const struct type *tustripped = strip_flags(
+				tagged->tagged.types[i], &_tustripped);
 			if (tustripped->id == stripped->id) {
-				return tu->type;
+				return tagged->tagged.types[i];
 			}
 		}
 	}
@@ -856,9 +862,10 @@ promote_flexible(struct context *ctx,
 	assert(!type_is_flexible(a) && type_is_flexible(b));
 	if (type_dealias(ctx, a)->storage == STORAGE_TAGGED) {
 		const struct type *tag = NULL;
-		for (const struct type_tagged_union *tu =
-				&type_dealias(ctx, a)->tagged; tu; tu = tu->next) {
-			const struct type *p = promote_flexible(ctx, tu->type, b);
+		struct type_tagged_union tagged = type_dealias(ctx, a)->tagged;
+		for (size_t i = 0; i < tagged.len; i++) {
+			const struct type *p =
+				promote_flexible(ctx, tagged.types[i], b);
 			if (!p) {
 				lower_flexible(ctx, b, tag);
 				continue;
@@ -921,20 +928,22 @@ tagged_subset_compat(struct context *ctx, const struct type *superset, const str
 	if (superset->storage != STORAGE_TAGGED || subset->storage != STORAGE_TAGGED) {
 		return false;
 	}
-	const struct type_tagged_union *superset_tu = &superset->tagged,
-		*subset_tu = &subset->tagged;
-	while (subset_tu && superset_tu) {
-		while (superset_tu) {
-			if (superset_tu->type->id == subset_tu->type->id) {
-				subset_tu = subset_tu->next;
-				superset_tu = superset_tu->next;
+	size_t sub_i = 0, super_i = 0;
+	while (sub_i < subset->tagged.len && super_i < superset->tagged.len) {
+		while (super_i < superset->tagged.len) {
+			const struct type *sub_memb = subset->tagged.types[sub_i];
+			const struct type *super_memb = superset->tagged.types[super_i];
+			// XXX: Why do we use the ID here?
+			if (sub_memb->id == super_memb->id) {
+				sub_i++;
+				super_i++;
 				break;
 			}
-			superset_tu = superset_tu->next;
+			super_i++;
 		}
 	}
 
-	return !subset_tu;
+	return sub_i >= subset->tagged.len;
 }
 
 static bool

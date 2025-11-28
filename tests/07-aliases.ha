@@ -5,11 +5,6 @@ fn alias_builtin() void = {
 	assert(i == 1234, "built-in alias");
 };
 
-fn unwrap() void = {
-	let i: ...my_int = 1234;
-	assert(i == 1234);
-};
-
 type my_array = [3]int;
 type my_array_ptr = *my_array;
 type my_array_ptr_ptr = *my_array_ptr;

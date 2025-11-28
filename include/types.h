@@ -124,8 +124,9 @@ struct type_tuple {
 };
 
 struct type_tagged_union {
-	const struct type *type;
-	struct type_tagged_union *next;
+	const struct type **types;
+	size_t len;
+	size_t cap;
 };
 
 enum type_flags {
@@ -161,8 +162,8 @@ const struct struct_field *type_get_field(struct context *ctx,
 const struct type_tuple *type_get_value(
 	const struct type *type, uint64_t index);
 
-struct type_tagged_union * 
-tagged_dup_tags(const struct type_tagged_union *tags);
+void tagged_append(struct type_tagged_union *tagged, const struct type *memb);
+struct type_tagged_union tagged_dup_tags(const struct type_tagged_union *tags);
 const struct type *tagged_select_subtype(struct context *ctx,
 	const struct type *tagged, const struct type *subtype, bool strip);
 bool tagged_subset_compat(struct context *ctx,

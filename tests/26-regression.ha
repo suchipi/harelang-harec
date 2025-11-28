@@ -185,7 +185,8 @@ export fn main() void = {
 	compile(status::CHECK, "fn a() *opaque = alloc(void);")!;
 	compile(status::CHECK, "fn a() void = { static let b = x & struct { a: int = 0 }; };")!;
 	assert(0xffu8 + 1 >> 1 == 0);
-	compile(status::CHECK, "type a = *...b; type b = *...a;")!;
+	compile(status::CHECK, "type a = *(...a | void);")!;
+	compile(status::CHECK, "type a = (...a | void);")!;
 	compile(status::CHECK, "def A = len([1]: []str);")!;
 
 	control_never();

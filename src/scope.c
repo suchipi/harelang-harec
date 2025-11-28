@@ -17,6 +17,7 @@ scope_push(struct scope **stack, enum scope_class class)
 {
 	struct scope *new = xcalloc(1, sizeof(struct scope));
 	new->class = class;
+	new->results.types = NULL;
 	new->next = &new->objects;
 	new->parent = *stack;
 	*stack = new;

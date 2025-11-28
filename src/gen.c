@@ -2306,10 +2306,10 @@ gen_expr_for_with(struct gen_context *ctx, const struct expression *expr,
 		gen_load_tag(ctx, &qtag, &qinitializer, initializer_type);
 
 		const struct type *done_type = NULL;
-		for (const struct type_tagged_union *tu = &initializer_type->tagged;
-				tu; tu = tu->next) {
-			if (type_dealias(NULL, tu->type)->storage == STORAGE_DONE) {
-				done_type = tu->type;
+		for (size_t i = 0; i < initializer_type->tagged.len; i++) {
+			const struct type *memb = initializer_type->tagged.types[i];
+			if (type_dealias(NULL, memb)->storage == STORAGE_DONE) {
+				done_type = memb;
 				break;
 			}
 		}
@@ -2324,11 +2324,11 @@ gen_expr_for_with(struct gen_context *ctx, const struct expression *expr,
 
 		const struct type *var_type = NULL;
 		if (binding->unpack != NULL) {
-			const struct type_tagged_union *tagged = &initializer_type->tagged;
-			if  (type_dealias(NULL, tagged->type)->storage == STORAGE_TUPLE) {
-				var_type = type_dealias(NULL, tagged->type);
+			const struct type **tagged = initializer_type->tagged.types;
+			if  (type_dealias(NULL, tagged[0])->storage == STORAGE_TUPLE) {
+				var_type = type_dealias(NULL, tagged[0]);
 			} else {
-				var_type = type_dealias(NULL, tagged->next->type);
+				var_type = type_dealias(NULL, tagged[1]);
 			}
 			assert(var_type->storage == STORAGE_TUPLE);
 		} else if (binding->object != NULL) {
@@ -2752,10 +2752,10 @@ gen_subset_match_tests(struct gen_context *ctx,
 	// In this situation, we test the match object's tag against each type
 	// ID of the case type.
 	struct gen_value match = mkgtemp(ctx, &builtin_type_bool, ".%d");
-	for (const struct type_tagged_union *tu = &type->tagged; tu; tu = tu->next) {
+	for (size_t i = 0; i < type->tagged.len; i++) {
 		struct qbe_statement lnexttag;
 		struct qbe_value bnexttag = mklabel(ctx, &lnexttag, ".%d");
-		struct qbe_value id = constl(tu->type->id);
+		struct qbe_value id = constl(type->tagged.types[i]->id);
 		struct qbe_value qmatch = mkqval(ctx, &match);
 		pushi(ctx->current, &qmatch, Q_CEQW, &tag, &id, NULL);
 		pushi(ctx->current, NULL, Q_JNZ, &qmatch, &bmatch, &bnexttag, NULL);

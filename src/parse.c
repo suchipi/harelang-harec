@@ -514,7 +514,6 @@ parse_struct_union_type(struct lexer *lexer)
 				unlex(lexer, &tok);
 				next->type = mktype(loc);
 				next->type->storage = STORAGE_ALIAS;
-				next->type->unwrap = false;
 				next->type->alias = parse_identifier(lexer, name, NULL);
 				break;
 			}
@@ -547,17 +546,26 @@ parse_struct_union_type(struct lexer *lexer)
 }
 
 static struct ast_type *
-parse_tagged_type(struct lexer *lexer, struct ast_type *first)
+parse_tagged_type(struct lexer *lexer, struct ast_type *first, bool unwrap)
 {
 	struct ast_type *type = mktype(first->loc);
 	type->storage = STORAGE_TAGGED;
 	struct ast_tagged_union_type *next = &type->tagged;
 	next->type = first;
+	next->unwrap = unwrap;
 	struct token tok = {0};
 	while (tok.token != T_RPAREN) {
 		next->next = xcalloc(1, sizeof(struct ast_tagged_union_type));
 		next = next->next;
+
+		if (lex(lexer, &tok) == T_ELLIPSIS) {
+			next->unwrap = true;
+		} else {
+			unlex(lexer, &tok);
+		}
+
 		next->type = parse_type(lexer);
+
 		switch (lex(lexer, &tok)) {
 		case T_BOR:
 			if (lex(lexer, &tok) != T_RPAREN) {
@@ -603,11 +611,18 @@ parse_tuple_type(struct lexer *lexer, struct ast_type *first)
 static struct ast_type *
 parse_tagged_or_tuple_type(struct lexer *lexer)
 {
-	struct ast_type *type = parse_type(lexer);
 	struct token tok = {0};
+	if (lex(lexer, &tok) == T_ELLIPSIS) {
+		struct ast_type *type = parse_type(lexer);
+		want(lexer, T_BOR, &tok);
+		return parse_tagged_type(lexer, type, true);
+	}
+	unlex(lexer, &tok);
+
+	struct ast_type *type = parse_type(lexer);
 	switch (lex(lexer, &tok)) {
 	case T_BOR:
-		return parse_tagged_type(lexer, type);
+		return parse_tagged_type(lexer, type, false);
 	case T_COMMA:
 		return parse_tuple_type(lexer, type);
 	default:
@@ -626,7 +641,7 @@ parse_type(struct lexer *lexer)
 		flags |= TYPE_ERROR;
 	}
 	struct ast_type *type = NULL;
-	bool nullable = false, unwrap = false;
+	bool nullable = false;
 	switch (lex(lexer, &tok)) {
 	case T_BOOL:
 	case T_DONE:
@@ -706,15 +721,10 @@ parse_type(struct lexer *lexer)
 		type->storage = STORAGE_FUNCTION;
 		parse_prototype(lexer, &type->func);
 		break;
-	case T_ELLIPSIS:
-		unwrap = true;
-		want(lexer, T_NAME, &tok);
-		// Fallthrough
 	case T_NAME:
 		unlex(lexer, &tok);
 		type = mktype(lexer->loc);
 		type->storage = STORAGE_ALIAS;
-		type->unwrap = unwrap;
 		type->alias = parse_identifier(lexer, NULL, NULL);
 		break;
 	default:

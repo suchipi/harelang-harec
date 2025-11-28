@@ -75,6 +75,7 @@ struct ast_pointer_type {
 
 struct ast_tagged_union_type {
 	struct ast_type *type;
+	bool unwrap;
 	struct ast_tagged_union_type *next;
 };
 
@@ -108,10 +109,8 @@ struct ast_type {
 		struct ast_tuple_type tuple;
 		struct {
 			struct ident *alias;
-			union {
-				struct ast_enum_type _enum;
-				bool unwrap;
-			};
+			// Only valid for enums
+			struct ast_enum_type _enum;
 		};
 	};
 };

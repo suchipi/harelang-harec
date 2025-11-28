@@ -286,12 +286,10 @@ emit_type(const struct type *type, FILE *out)
 		break;
 	case STORAGE_TAGGED:
 		xfprintf(out, "(");
-		for (const struct type_tagged_union *tu = &type->tagged;
-				tu; tu = tu->next) {
-			emit_type(tu->type, out);
-			if (tu->next) {
-				xfprintf(out, " | ");
-			}
+		emit_type(type->tagged.types[0], out);
+		for (size_t i = 1; i < type->tagged.len; i++) {
+			xfprintf(out, " | ");
+			emit_type(type->tagged.types[i], out);
 		}
 		xfprintf(out, ")");
 		break;

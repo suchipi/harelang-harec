@@ -521,24 +521,20 @@ alloc_inithint(struct context *ctx,
 	hint = type_dealias(ctx, hint);
 
 	switch (hint->storage) {
-	case STORAGE_TAGGED:;
-		const struct type_tagged_union *first = &hint->tagged,
-			*second = first->next;
-
-		if (second->next != NULL) {
+	case STORAGE_TAGGED:
+		if (hint->tagged.len != 2) {
 			*inithint = NULL;
 			return;
 		}
 
-		if (first->type == &builtin_type_nomem) {
-			htype = second->type;
-		} else if (second->type == &builtin_type_nomem) {
-			htype = first->type;
+		if (hint->tagged.types[0] == &builtin_type_nomem) {
+			htype = hint->tagged.types[1];
+		} else if (hint->tagged.types[1] == &builtin_type_nomem) {
+			htype = hint->tagged.types[0];
 		} else {
 			*inithint = NULL;
 			return;
 		}
-
 		break;
 	case STORAGE_POINTER:
 	case STORAGE_SLICE:
@@ -605,15 +601,9 @@ check_expr_alloc(struct context *ctx,
 		return;
 	}
 
-	struct type_tagged_union nomem_tag = {
-		.type = &builtin_type_nomem,
-		.next = NULL,
-	};
-	struct type_tagged_union tags = {
-		.type = expr->alloc.allocation_result,
-		.next = &nomem_tag,
-	};
-	expr->result = type_store_lookup_tagged(ctx, aexpr->loc, &tags);
+	const struct type *tags[] = { &builtin_type_nomem, expr->alloc.allocation_result };
+	struct type_tagged_union tagged = { .types = tags, .len = 2 };
+	expr->result = type_store_lookup_tagged(ctx, aexpr->loc, &tagged);
 }
 
 static void
@@ -625,16 +615,9 @@ check_expr_append_insert(struct context *ctx,
 	assert(aexpr->type == EXPR_APPEND || aexpr->type == EXPR_INSERT);
 	expr->type = aexpr->type;
 
-	struct type_tagged_union nomem_tag = {
-		.type = &builtin_type_nomem,
-		.next = NULL,
-	};
-	struct type_tagged_union tags = {
-		.type = &builtin_type_void,
-		.next = &nomem_tag,
-	};
-
-	expr->result = type_store_lookup_tagged(ctx, aexpr->loc, &tags);
+	const struct type *tags[] = { &builtin_type_nomem, &builtin_type_void };
+	struct type_tagged_union tagged = { .types = tags, .len = 2 };
+	expr->result = type_store_lookup_tagged(ctx, aexpr->loc, &tagged);
 
 	expr->append.is_static = aexpr->append.is_static;
 	expr->append.is_multi = aexpr->append.is_multi;
@@ -1654,10 +1637,11 @@ check_expr_array_literal(struct context *ctx,
 		case STORAGE_SLICE:
 			type = hint->array.members;
 			break;
-		case STORAGE_TAGGED:
-			for (const struct type_tagged_union *tu = &hint->tagged;
-					tu; tu = tu->next) {
-				const struct type *t = type_dealias(ctx, tu->type);
+		case STORAGE_TAGGED:;
+			const struct type_tagged_union *htagged = &hint->tagged;
+			for (size_t i = 0; i < htagged->len; i++) {
+				const struct type *t =
+					type_dealias(ctx, htagged->types[i]);
 				if (t->storage == STORAGE_ARRAY
 						|| t->storage == STORAGE_SLICE) {
 					hint = t;
@@ -1762,11 +1746,7 @@ check_expr_compound(struct context *ctx,
 	if (lexpr->result->storage != STORAGE_NEVER) {
 		// Add implicit `yield void` if control reaches end of compound
 		// expression.
-		struct type_tagged_union *result =
-			xcalloc(1, sizeof(struct type_tagged_union));
-		result->type = &builtin_type_void;
-		result->next = scope->results;
-		scope->results = result;
+		tagged_append(&scope->results, &builtin_type_void);
 
 		list->next = xcalloc(1, sizeof(struct expressions));
 		struct ast_expression *yexpr = xcalloc(1, sizeof(struct ast_expression));
@@ -1776,7 +1756,7 @@ check_expr_compound(struct context *ctx,
 		list->next->expr = lexpr;
 	}
 	expr->result = type_store_reduce_result(ctx, aexpr->loc,
-			scope->results);
+			&scope->results);
 
 	for (struct yield *yield = scope->yields; yield;) {
 		*yield->expression = lower_implicit_cast(ctx, expr->result,
@@ -2019,11 +1999,7 @@ check_expr_control(struct context *ctx,
 		expr->control.value->result = &builtin_type_void;
 	}
 
-	struct type_tagged_union *result =
-		xcalloc(1, sizeof(struct type_tagged_union));
-	result->type = expr->control.value->result;
-	result->next = scope->results;
-	scope->results = result;
+	tagged_append(&scope->results, expr->control.value->result);
 
 	struct yield *yield = xcalloc(1, sizeof(struct yield));
 	yield->expression = &expr->control.value;
@@ -2124,23 +2100,15 @@ check_expr_for_each(struct context *ctx,
 				init_type_hint, SIZE_UNDEFINED, false);
 			break;
 		case FOR_EACH_ITERATOR: {
-			struct type_tagged_union *tags;
-
-			struct type_tagged_union *done_tagged = xcalloc(1,
-				sizeof(struct type_tagged_union));
-			done_tagged->type = &builtin_type_done;
-
+			struct type_tagged_union tags = { .types = NULL };
 			if (init_type_hint->storage == STORAGE_TAGGED) {
 				tags = tagged_dup_tags(&init_type_hint->tagged);
 			} else {
-				tags = xcalloc(1,
-					sizeof(struct type_tagged_union));
-				tags->type = binding_type;
+				tagged_append(&tags, binding_type);
 			}
-
-			tags->next = done_tagged;
+			tagged_append(&tags, &builtin_type_done);
 			init_type_hint = type_store_lookup_tagged(ctx,
-				aexpr->loc, tags);
+				aexpr->loc, &tags);
 			break;
 		}
 		default:
@@ -2192,30 +2160,26 @@ check_expr_for_each(struct context *ctx,
 			return;
 		}
 
-		struct type_tagged_union *tags = tagged_dup_tags(
-			&initializer_type->tagged);
-		struct type_tagged_union *prev_tag = NULL;
-		int done_tags_found = 0;
-
 		// Remove all done tags and aliases of it from the tagged union
-		for (struct type_tagged_union *tu = tags; tu; tu = tu->next) {
-			if (type_dealias(ctx, tu->type)->storage == STORAGE_DONE) {
-				if (prev_tag != NULL) {
-					prev_tag->next = tu->next;
-				} else {
-					tags = tu->next;
-				}
+		struct type_tagged_union tags =
+			tagged_dup_tags(&initializer_type->tagged);
+		int done_tags_found = 0;
+		size_t new_len = 0;
+		for (size_t i = 0; i < tags.len; i++) {
+			if (type_dealias(ctx, tags.types[i])->storage == STORAGE_DONE) {
 				done_tags_found++;
+				continue;
 			}
-			prev_tag = tu;
+			tags.types[new_len++] = tags.types[i];
 		}
+		tags.len = new_len;
 		if (done_tags_found != 1) {
 			error(ctx, abinding->initializer->loc, initializer,
 				"Tagged union must contain exactly one done type");
 			return;
 		}
 		initializer_result = type_store_reduce_result(ctx,
-			abinding->initializer->loc, tags);
+			abinding->initializer->loc, &tags);
 		break;
 	default:
 		abort();
@@ -2322,9 +2286,8 @@ check_expr_for(struct context *ctx,
 	// hint as the result type.
 	bool assignable_to_hint = true;
 	if (hint && type_is_assignable(ctx, hint, expr->result)) {
-		for (struct type_tagged_union *tu = scope->results; tu;
-				tu = tu->next) {
-			if (!type_is_assignable(ctx, hint, tu->type)) {
+		for (size_t i = 0; i < scope->results.len; i++) {
+			if (!type_is_assignable(ctx, hint, scope->results.types[i])) {
 				assignable_to_hint = false;
 				break;
 			}
@@ -2335,15 +2298,13 @@ check_expr_for(struct context *ctx,
 	if (assignable_to_hint) {
 		// If we were going to end up with `never` as our result, keep
 		// it regardless of the hint
-		if (scope->results || expr->_for.else_branch) {
+		if (scope->results.len != 0 || expr->_for.else_branch) {
 			expr->result = hint;
 		}
 	} else {
-		struct type_tagged_union *tu = xcalloc(1,
-			sizeof(struct type_tagged_union));
-		tu->type = expr->result;
-		tu->next = scope->results;
-		expr->result = type_store_reduce_result(ctx, aexpr->loc, tu);
+		tagged_append(&scope->results, expr->result);
+		expr->result = type_store_reduce_result(ctx,
+			aexpr->loc, &scope->results);
 	}
 
 	// Lower the break values to the result type.
@@ -2423,14 +2384,9 @@ check_expr_if(struct context *ctx,
 			&& type_is_assignable(ctx, hint, fresult)) {
 		expr->result = hint;
 	} else {
-		struct type_tagged_union _tags = {
-			.type = fresult,
-			.next = NULL,
-		}, tags = {
-			.type = true_branch->result,
-			.next = &_tags,
-		};
-		expr->result = type_store_reduce_result(ctx, aexpr->loc, &tags);
+		const struct type *tags[] = { fresult, true_branch->result };
+		struct type_tagged_union tagged = { .types = tags, .len = 2 };
+		expr->result = type_store_reduce_result(ctx, aexpr->loc, &tagged);
 		if (expr->result == NULL) {
 			error(ctx, aexpr->loc, expr,
 				"Invalid result type (dangling or ambiguous null)");
@@ -2541,9 +2497,7 @@ check_expr_match(struct context *ctx,
 		return;
 	}
 
-	struct type_tagged_union result_type = {0};
-	struct type_tagged_union *tagged = &result_type,
-		**next_tag = &tagged->next;
+	struct type_tagged_union result_type = { .types = NULL };
 
 	struct match_case **next = &expr->match.cases, *_case = NULL;
 	for (struct ast_match_case *acase = aexpr->match.cases;
@@ -2612,26 +2566,18 @@ check_expr_match(struct context *ctx,
 
 		if (expr->result == NULL) {
 			expr->result = _case->value->result;
-			tagged->type = expr->result;
+			tagged_append(&result_type, _case->value->result);
 		} else if (expr->result != _case->value->result) {
-			tagged = *next_tag =
-				xcalloc(1, sizeof(struct type_tagged_union));
-			next_tag = &tagged->next;
-			tagged->type = _case->value->result;
+			tagged_append(&result_type, _case->value->result);
 		}
 	}
 
-	if (result_type.next) {
+	if (result_type.len > 1) {
 		if (hint) {
 			expr->result = hint;
 		} else {
 			expr->result = type_store_reduce_result(
 				ctx, aexpr->loc, &result_type);
-			if (expr->result == NULL) {
-				error(ctx, aexpr->loc, expr,
-					"Invalid result type (dangling or ambiguous null)");
-				return;
-			}
 		}
 
 		struct match_case *_case = expr->match.cases;
@@ -2648,12 +2594,7 @@ check_expr_match(struct context *ctx,
 			acase = acase->next;
 		}
 
-		struct type_tagged_union *tu = result_type.next;
-		while (tu) {
-			struct type_tagged_union *next = tu->next;
-			free(tu);
-			tu = next;
-		}
+		free(result_type.types);
 	}
 }
 
@@ -2786,60 +2727,25 @@ check_expr_propagate(struct context *ctx,
 		}
 	}
 
-	struct type_tagged_union result_tagged = {0};
-	struct type_tagged_union *tagged = &result_tagged,
-		**next_tag = &tagged->next;
-
-	struct type_tagged_union return_tagged = {0};
-	struct type_tagged_union *rtagged = &return_tagged,
-		**next_rtag = &rtagged->next;
+	struct type_tagged_union res = { .types = NULL };
+	struct type_tagged_union ret = { .types = NULL };
 
 	const struct type_tagged_union *intu = &type_dealias(ctx, intype)->tagged;
-	for (; intu; intu = intu->next) {
-		if (intu->type->flags & TYPE_ERROR) {
-			if (rtagged->type) {
-				rtagged = *next_rtag =
-					xcalloc(1, sizeof(struct type_tagged_union));
-				next_rtag = &rtagged->next;
-				rtagged->type = intu->type;
-			} else {
-				rtagged->type = intu->type;
-			}
-		} else {
-			if (tagged->type) {
-				tagged = *next_tag =
-					xcalloc(1, sizeof(struct type_tagged_union));
-				next_tag = &tagged->next;
-				tagged->type = intu->type;
-			} else {
-				tagged->type = intu->type;
-			}
-		}
+	for (size_t i = 0; i < intu->len; i++) {
+		tagged_append(intu->types[i]->flags & TYPE_ERROR ? &ret : &res,
+			intu->types[i]);
 	}
 
-	if (!return_tagged.type) {
+	if (ret.len == 0) {
 		error(ctx, aexpr->loc, expr,
 			"No error can occur here, cannot propagate");
 		return;
 	}
 
-	const struct type *return_type;
-	if (return_tagged.next) {
-		return_type = type_store_lookup_tagged(
-			ctx, aexpr->loc, &return_tagged);
-	} else {
-		return_type = return_tagged.type;
-	}
-
-	const struct type *result_type;
-	if (!result_tagged.type) {
-		result_type = &builtin_type_never;
-	} else if (result_tagged.next) {
-		result_type = type_store_lookup_tagged(
-			ctx, aexpr->loc, &result_tagged);
-	} else {
-		result_type = result_tagged.type;
-	}
+	const struct type *return_type =
+		type_store_lookup_tagged(ctx, aexpr->loc, &ret);
+	const struct type *result_type =
+		type_store_lookup_tagged(ctx, aexpr->loc, &res);
 
 	// Lower to a match expression
 	expr->type = EXPR_MATCH;
@@ -3361,7 +3267,7 @@ check_expr_switch(struct context *ctx,
 		return;
 	}
 
-	struct type_tagged_union *tagged = NULL, *result = NULL;
+	struct type_tagged_union tagged = { .types = NULL };
 
 	struct switch_case **next = &expr->_switch.cases, *_case = NULL;
 	size_t n = 0;
@@ -3419,12 +3325,7 @@ check_expr_switch(struct context *ctx,
 			},
 		};
 		check_expression(ctx, &compound, _case->value, hint);
-		if (tagged == NULL) {
-			result = tagged = xcalloc(1, sizeof *tagged);
-		} else if (tagged->type && tagged->type != _case->value->result) {
-			tagged = tagged->next = xcalloc(1, sizeof *tagged);
-		}
-		tagged->type = _case->value->result;
+		tagged_append(&tagged, _case->value->result);
 	}
 
 	struct expression **cases_array = xcalloc(n, sizeof(struct expression *));
@@ -3461,7 +3362,7 @@ check_expr_switch(struct context *ctx,
 		expr->result = hint;
 	} else {
 		expr->result = type_store_reduce_result(
-			ctx, aexpr->loc, result);
+			ctx, aexpr->loc, &tagged);
 		if (expr->result == NULL) {
 			error(ctx, aexpr->loc, expr,
 				"Invalid result type (dangling or ambiguous null)");
@@ -3483,11 +3384,7 @@ check_expr_switch(struct context *ctx,
 		acase = acase->next;
 	}
 
-	while (result) {
-		struct type_tagged_union *next = result->next;
-		free(result);
-		result = next;
-	}
+	free(tagged.types);
 }
 
 static void
@@ -3528,14 +3425,14 @@ check_expr_tuple(struct context *ctx,
 	if (hint && type_dealias(ctx, hint)->storage == STORAGE_TUPLE) {
 		expr->result = hint;
 	} else if (hint && type_dealias(ctx, hint)->storage == STORAGE_TAGGED) {
-		for (const struct type_tagged_union *tu =
-				&type_dealias(ctx, hint)->tagged;
-				tu; tu = tu->next) {
-			if (type_dealias(ctx, tu->type)->storage != STORAGE_TUPLE) {
+		const struct type *tagged = type_dealias(ctx, hint);
+		for (size_t i = 0; i < tagged->tagged.len; i++) {
+			const struct type *memb = tagged->tagged.types[i];
+			if (type_dealias(ctx, memb)->storage != STORAGE_TUPLE) {
 				continue;
 			}
 			const struct type_tuple *ttuple =
-				&type_dealias(ctx, tu->type)->tuple;
+				&type_dealias(ctx, memb)->tuple;
 			const struct expression_tuple *etuple = &expr->tuple;
 			bool valid = true;
 			while (etuple) {
@@ -3548,7 +3445,7 @@ check_expr_tuple(struct context *ctx,
 				etuple = etuple->next;
 			}
 			if (!ttuple && valid) {
-				expr->result = type_dealias(ctx, tu->type);
+				expr->result = type_dealias(ctx, memb);
 				break;
 			}
 		}
@@ -4164,9 +4061,8 @@ check_exported_type(struct context *ctx,
 		}
 		break;
 	case STORAGE_TAGGED:
-		for (const struct type_tagged_union *t = &type->tagged;
-				t; t = t->next) {
-			check_exported_type(ctx, loc, t->type);
+		for (size_t i = 0; i < type->tagged.len; i++) {
+			check_exported_type(ctx, loc, type->tagged.types[i]);
 		}
 		break;
 	case STORAGE_TUPLE:
