@@ -405,13 +405,14 @@ static void
 emit_decl_global(const struct declaration *decl, FILE *out)
 {
 	char *ident = ident_unparse(decl->ident);
-	xfprintf(out, "export let ");
+	xfprintf(out, "export ");
 	if (decl->symbol) {
 		xfprintf(out, "@symbol(\"%s\") ", decl->symbol);
 	}
 	if (decl->global.threadlocal) {
 		xfprintf(out, "@threadlocal ");
 	}
+	xfprintf(out, "let ");
 	xfprintf(out, "%s: ", ident);
 	emit_type(decl->global.type, out);
 	xfprintf(out, ";\n");

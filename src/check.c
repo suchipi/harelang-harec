@@ -4085,41 +4085,40 @@ check_hosted_main(struct context *ctx,
 static void
 scan_types(struct context *ctx, struct scope *imp, const struct ast_decl *decl)
 {
-	for (const struct ast_type_decl *t = &decl->type; t; t = t->next) {
-		struct ident *with_ns = mkident(ctx,  t->ident, NULL);
-		check_hosted_main(ctx, decl->loc, NULL, with_ns, NULL);
-		struct scope_object *obj = incomplete_decl_create(ctx,
-				decl->loc, ctx->scope, with_ns, t->ident);
-		obj->idecl->decl = (struct ast_decl){
-			.decl_type = ADECL_TYPE,
-			.loc = decl->loc,
-			.type = *t,
-			.exported = decl->exported,
-		};
-		obj->idecl->imports = imp;
-		if (t->type->storage == STORAGE_ENUM) {
-			bool exported = obj->idecl->decl.exported;
-			const struct type *type = type_store_lookup_enum(
-					ctx, t->type, exported);
-			if (type->storage == STORAGE_ERROR) {
-				return; // error occured
-			}
-			scope_push((struct scope **)&type->_enum.values, SCOPE_ENUM);
-			scan_enum_field(ctx, imp,
-				type->_enum.values, type, t->type->_enum.values);
-			type->_enum.values->parent = ctx->defines;
-			obj->otype = O_TYPE;
-			obj->type = type;
-			append_decl(ctx, &(struct declaration){
-				.decl_type = DECL_TYPE,
-				.file = decl->loc.file,
-				.ident = obj->ident,
-				.exported = exported,
-				.type = type,
-			});
-		} else {
-			obj->idecl->type = IDECL_DECL;
+	const struct ast_type_decl *t = &decl->type;
+	struct ident *with_ns = mkident(ctx,  t->ident, NULL);
+	check_hosted_main(ctx, decl->loc, NULL, with_ns, NULL);
+	struct scope_object *obj = incomplete_decl_create(ctx,
+			decl->loc, ctx->scope, with_ns, t->ident);
+	obj->idecl->decl = (struct ast_decl){
+		.decl_type = ADECL_TYPE,
+		.loc = decl->loc,
+		.type = *t,
+		.exported = decl->exported,
+	};
+	obj->idecl->imports = imp;
+	if (t->type->storage == STORAGE_ENUM) {
+		bool exported = obj->idecl->decl.exported;
+		const struct type *type = type_store_lookup_enum(
+				ctx, t->type, exported);
+		if (type->storage == STORAGE_ERROR) {
+			return; // error occured
 		}
+		scope_push((struct scope **)&type->_enum.values, SCOPE_ENUM);
+		scan_enum_field(ctx, imp,
+			type->_enum.values, type, t->type->_enum.values);
+		type->_enum.values->parent = ctx->defines;
+		obj->otype = O_TYPE;
+		obj->type = type;
+		append_decl(ctx, &(struct declaration){
+			.decl_type = DECL_TYPE,
+			.file = decl->loc.file,
+			.ident = obj->ident,
+			.exported = exported,
+			.type = type,
+		});
+	} else {
+		obj->idecl->type = IDECL_DECL;
 	}
 }
 
@@ -4687,27 +4686,21 @@ scan_decl(struct context *ctx, struct scope *imports, const struct ast_decl *dec
 	struct ident *ident;
 	switch (decl->decl_type) {
 	case ADECL_CONST:
-		for (const struct ast_global_decl *g = &decl->constant;
-				g; g = g->next) {
-			scan_const(ctx, imports, decl->exported, decl->loc, g);
-		}
+		scan_const(ctx, imports, decl->exported, decl->loc, &decl->constant);
 		break;
 	case ADECL_GLOBAL:
-		for (const struct ast_global_decl *g = &decl->global;
-				g; g = g->next) {
-			ident = mkident(ctx, g->ident, g->symbol);
-			check_hosted_main(ctx, decl->loc, NULL, ident, g->symbol);
-			obj = incomplete_decl_create(ctx, decl->loc,
-				ctx->scope, ident, g->ident);
-			obj->idecl->type = IDECL_DECL;
-			obj->idecl->decl = (struct ast_decl){
-				.decl_type = ADECL_GLOBAL,
-				.loc = decl->loc,
-				.global = *g,
-				.exported = decl->exported,
-			};
-			obj->idecl->imports = imports;
-		}
+		ident = mkident(ctx, decl->global.ident, decl->global.symbol);
+		check_hosted_main(ctx, decl->loc, NULL, ident, decl->global.symbol);
+		obj = incomplete_decl_create(ctx, decl->loc,
+			ctx->scope, ident, decl->global.ident);
+		obj->idecl->type = IDECL_DECL;
+		obj->idecl->decl = (struct ast_decl){
+			.decl_type = ADECL_GLOBAL,
+			.loc = decl->loc,
+			.global = decl->global,
+			.exported = decl->exported,
+		};
+		obj->idecl->imports = imports;
 		break;
 	case ADECL_FUNC:;
 		const struct ast_function_decl *func = &decl->function;
@@ -4835,7 +4828,7 @@ wrap_resolver(struct context *ctx, struct scope_object *obj, resolvefn resolver)
 }
 
 static void
-load_import(struct context *ctx, const struct ast_global_decl *defines,
+load_import(struct context *ctx, const struct ast_decls *defines,
 	struct ast_imports *import, struct scope *scope)
 {
 	struct scope *mod = module_resolve(ctx, defines, import->ident);
@@ -4944,7 +4937,7 @@ check_internal(type_store *ts,
 	bool is_test,
 	const char *mainsym,
 	struct ident *mainident,
-	const struct ast_global_decl *defines,
+	const struct ast_decls *defines,
 	const struct ast_unit *aunit,
 	struct unit *unit,
 	struct intern_table *itbl,
@@ -4973,9 +4966,11 @@ check_internal(type_store *ts,
 	sources[0] = "-D";
 	ctx.scope = NULL;
 	ctx.unit = scope_push(&ctx.scope, SCOPE_DEFINES);
-	for (const struct ast_global_decl *def = defines; def; def = def->next) {
+	for (const struct ast_decls *def = defines; def; def = def->next) {
+		const struct ast_decl *decl = &def->decl;
+		assert(decl->decl_type == ADECL_CONST);
 		struct scope_object *obj =
-			scan_const(&ctx, NULL, false , defineloc, def);
+			scan_const(&ctx, NULL, false, defineloc, &decl->constant);
 		resolve_const(&ctx, obj);
 	}
 	ctx.defines = ctx.scope;
@@ -5081,7 +5076,7 @@ check(type_store *ts,
 	bool is_test,
 	const char *mainsym,
 	struct ident *mainident,
-	const struct ast_global_decl *defines,
+	const struct ast_decls *defines,
 	const struct ast_unit *aunit,
 	struct unit *unit,
 	struct intern_table *itbl)

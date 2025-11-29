@@ -384,13 +384,11 @@ struct ast_global_decl {
 	struct ident *ident;
 	struct ast_type *type;
 	struct ast_expression *init;
-	struct ast_global_decl *next;
 };
 
 struct ast_type_decl {
 	struct ident *ident;
 	struct ast_type *type;
-	struct ast_type_decl *next;
 };
 
 enum func_decl_flags {

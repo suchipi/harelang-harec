@@ -79,7 +79,7 @@ fn reject() void = {
 
 	// enum circular dependencies
 	compile(status::CHECK, "type a = enum { A = B, B = A };")!;
-	compile(status::CHECK, "type a = enum { A = b::B }, b = enum { B = a::A };")!;
+	compile(status::CHECK, "type a = enum { A = b::B }; type b = enum { B = a::A };")!;
 	compile(status::CHECK, "
 		def a: int = e::VAL1;
 		type e = enum { VAL1 = a };
@@ -117,8 +117,12 @@ fn interdependent() void = {
 	assert(interdependent2::C == 5);
 };
 
-type e1 = enum { a, b, c, d }, a1 = e1;
-type a2 = e2, e2 = enum u8 { a, b, c, d }; // reverse
+type e1 = enum { a, b, c, d };
+type a1 = e1;
+
+// reverse
+type a2 = e2;
+type e2 = enum u8 { a, b, c, d };
 
 type imported_alias = testmod::_enum;
 

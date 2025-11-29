@@ -12,7 +12,8 @@ type nh = struct {
 	field: int,
 };
 
-let x: int = 42, y: int = 69;
+let x: int = 42;
+let y: int = 69;
 
 let v0: void = void;
 let v1 = void;

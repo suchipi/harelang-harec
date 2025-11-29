@@ -16,7 +16,7 @@
 #define strlen_HARE_TD_ (sizeof("HARE_TD_") - 1)
 
 struct scope *
-module_resolve(struct context *ctx, const struct ast_global_decl *defines,
+module_resolve(struct context *ctx, const struct ast_decls *defines,
 	struct ident *ident)
 {
 	uint32_t hash = ident_hash(FNV1A_INIT, ident);

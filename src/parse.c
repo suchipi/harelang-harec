@@ -2465,80 +2465,35 @@ parse_global_decl(struct lexer *lexer, enum lexical_token mode,
 		struct ast_global_decl *decl)
 {
 	struct token tok = {0};
-	struct ast_global_decl *i = decl;
 	assert(mode == T_LET || mode == T_CONST || mode == T_DEF);
-	bool more = true;
-	while (more) {
-		if (mode == T_LET || mode == T_CONST) {
-			if (try(lexer, T_ATTR_SYMBOL)) {
-				i->symbol = parse_attr_symbol(lexer);
-			}
-			i->threadlocal = try(lexer, T_ATTR_THREADLOCAL);
-		}
-		i->ident = parse_identifier(lexer, NULL, NULL);
-		switch (lex(lexer, &tok)) {
-		case T_COLON:
-			i->type = parse_type(lexer);
-			if (lex(lexer, &tok) != T_EQUAL) {
-				synassert(mode != T_DEF, &tok, T_EQUAL, T_EOF);
-				unlex(lexer, &tok);
-				break;
-			}
-			/* fallthrough */
-		case T_EQUAL:
-			i->init = parse_initializer(lexer);
-			break;
-		default:
-			synerr(&tok, T_EQUAL, T_COLON, T_EOF);
-		}
-
-		switch (lex(lexer, &tok)) {
-		case T_COMMA:
-			lex(lexer, &tok);
-			if (tok.token == T_NAME
-					|| tok.token == T_ATTR_SYMBOL) {
-				i->next = xcalloc(1, sizeof(struct ast_global_decl));
-				i = i->next;
-				unlex(lexer, &tok);
-				break;
-			}
-			/* fallthrough */
-		default:
-			more = false;
+	decl->ident = parse_identifier(lexer, NULL, NULL);
+	switch (lex(lexer, &tok)) {
+	case T_COLON:
+		decl->type = parse_type(lexer);
+		if (lex(lexer, &tok) != T_EQUAL) {
+			synassert(mode != T_DEF, &tok, T_EQUAL, T_EOF);
 			unlex(lexer, &tok);
 			break;
 		}
+		/* fallthrough */
+	case T_EQUAL:
+		decl->init = parse_initializer(lexer);
+		break;
+	default:
+		synerr(&tok, T_EQUAL, T_COLON, T_EOF);
 	}
 }
 
 static void
 parse_type_decl(struct lexer *lexer, struct ast_type_decl *decl)
 {
-	struct token tok = {0};
 	struct ast_type_decl *i = decl;
-	bool more = true;
-	while (more) {
-		i->ident = parse_identifier(lexer, NULL, NULL);
-		want(lexer, T_EQUAL, NULL);
-		if (try(lexer, T_ENUM)) {
-			i->type = parse_enum_type(i->ident, lexer);
-		} else {
-			i->type = parse_type(lexer);
-		}
-		switch (lex(lexer, &tok)) {
-		case T_COMMA:
-			if (lex(lexer, &tok) == T_NAME) {
-				i->next = xcalloc(1, sizeof(struct ast_type_decl));
-				i = i->next;
-				unlex(lexer, &tok);
-				break;
-			}
-			/* fallthrough */
-		default:
-			more = false;
-			unlex(lexer, &tok);
-			break;
-		}
+	i->ident = parse_identifier(lexer, NULL, NULL);
+	want(lexer, T_EQUAL, NULL);
+	if (try(lexer, T_ENUM)) {
+		i->type = parse_enum_type(i->ident, lexer);
+	} else {
+		i->type = parse_type(lexer);
 	}
 }
 
@@ -2546,28 +2501,6 @@ static void
 parse_fn_decl(struct lexer *lexer, struct ast_function_decl *decl)
 {
 	struct token tok = {0};
-	bool more = true;
-	while (more) {
-		switch (lex(lexer, &tok)) {
-		case T_ATTR_FINI:
-			decl->flags |= FN_FINI;
-			break;
-		case T_ATTR_INIT:
-			decl->flags |= FN_INIT;
-			break;
-		case T_ATTR_SYMBOL:
-			decl->symbol = parse_attr_symbol(lexer);
-			break;
-		case T_ATTR_TEST:
-			decl->flags |= FN_TEST;
-			break;
-		default:
-			more = false;
-			unlex(lexer, &tok);
-			break;
-		}
-	}
-	want(lexer, T_FN, NULL);
 	decl->ident = parse_identifier(lexer, NULL, NULL);
 	parse_prototype(lexer, &decl->prototype);
 
@@ -2589,25 +2522,70 @@ parse_decl(struct lexer *lexer, struct ast_decl *decl)
 {
 	struct token tok = {0};
 	decl->loc = lexer->loc;
+
+	enum func_decl_flags flags = 0;
+	bool threadlocal = false;
+	const char *symbol = NULL;
+
+	switch (lex(lexer, &tok)) {
+	case T_ATTR_FINI:
+		flags |= FN_FINI;
+		break;
+	case T_ATTR_INIT:
+		flags |= FN_INIT;
+		break;
+	case T_ATTR_SYMBOL:
+		symbol = parse_attr_symbol(lexer);
+		break;
+	case T_ATTR_TEST:
+		flags |= FN_TEST;
+		break;
+	default:
+		unlex(lexer, &tok);
+		break;
+	}
+
+	switch (lex(lexer, &tok)) {
+	case T_ATTR_THREADLOCAL:
+		threadlocal = true;
+		break;
+	default:
+		unlex(lexer, &tok);
+		break;
+	}
+
 	switch (lex(lexer, &tok)) {
 	case T_CONST:
 	case T_LET:
+		synassert(flags == 0, &tok, T_FN, T_EOF);
 		decl->decl_type = ADECL_GLOBAL;
+		decl->global.threadlocal = threadlocal;
+		decl->global.symbol = symbol;
 		parse_global_decl(lexer, tok.token, &decl->global);
 		break;
 	case T_DEF:
+		synassert(flags == 0, &tok, T_FN, T_EOF);
+		synassert(symbol == NULL, &tok, T_CONST, T_LET, T_FN, T_EOF);
+		synassert(!threadlocal, &tok, T_CONST, T_LET, T_EOF);
 		decl->decl_type = ADECL_CONST;
 		parse_global_decl(lexer, tok.token, &decl->constant);
 		break;
 	case T_TYPE:
+		synassert(flags == 0, &tok, T_FN, T_EOF);
+		synassert(symbol == NULL, &tok, T_CONST, T_LET, T_FN, T_EOF);
+		synassert(!threadlocal, &tok, T_CONST, T_LET, T_EOF);
 		decl->decl_type = ADECL_TYPE;
 		parse_type_decl(lexer, &decl->type);
 		break;
-	default:
-		unlex(lexer, &tok);
+	case T_FN:
+		synassert(!threadlocal, &tok, T_CONST, T_LET, T_EOF);
+		decl->function.flags = flags;
+		decl->function.symbol = symbol;
 		decl->decl_type = ADECL_FUNC;
 		parse_fn_decl(lexer, &decl->function);
 		break;
+	default:
+		synerr(&tok, T_CONST, T_LET, T_DEF, T_TYPE, T_FN, T_EOF);
 	}
 }
 

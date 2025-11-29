@@ -213,75 +213,113 @@ type ptuple3 = [](ptuple3, ptuple3, [3]ptuple3);
 
 
 // elementary mutually recursive types
-type mut_A1 = *mut_A2, mut_A2 = *mut_A1;
+type mut_A1 = *mut_A2;
+type mut_A2 = *mut_A1;
 
-type mut_A3 = []mut_A4, mut_A4 = []mut_A3;
+type mut_A3 = []mut_A4;
+type mut_A4 = []mut_A3;
 
-type mut_A5 = *mut_A6, mut_A6 = []mut_A5;
+type mut_A5 = *mut_A6;
+type mut_A6 = []mut_A5;
 
-type mut_A7 = []mut_A8, mut_A8 = *mut_A7;
+type mut_A7 = []mut_A8;
+type mut_A8 = *mut_A7;
 
-type mut_A9 = mut_A10, mut_A10 = *mut_A9;
-type mut_B10 = *mut_B9, mut_B9 = mut_B10; // reverse
+type mut_A9 = mut_A10;
+type mut_A10 = *mut_A9;
+// reverse
+type mut_B10 = *mut_B9;
+type mut_B9 = mut_B10;
 
-type mut_A11 = mut_A12, mut_A12 = []mut_A11;
-type mut_B12 = []mut_B11, mut_B11 = mut_B12; // reverse
+type mut_A11 = mut_A12;
+type mut_A12 = []mut_A11;
+// reverse
+type mut_B12 = []mut_B11;
+type mut_B11 = mut_B12;
 
 // mutually recursive structs
-type mut_struct_A1 = struct { data: *mut_struct_A2 },
-	mut_struct_A2 = struct { data: mut_struct_A1 };
-type mut_struct_B2 = struct { data: mut_struct_B1 }, // reverse
-	mut_struct_B1 = struct { data: *mut_struct_B2 };
+type mut_struct_A1 = struct { data: *mut_struct_A2 };
+type mut_struct_A2 = struct { data: mut_struct_A1 };
+// reverse
+type mut_struct_B2 = struct { data: mut_struct_B1 };
+type mut_struct_B1 = struct { data: *mut_struct_B2 };
 
 // mutually recursive structs with padding
-type mut_struct_A3 = struct { padding: u16, data: *mut_struct_A4 },
-	mut_struct_A4 = struct { padding: u16, data: mut_struct_A3 };
-type mut_struct_B4 = struct { padding: u16, data: mut_struct_B3 }, // reverse
-	mut_struct_B3 = struct { padding: u16, data: *mut_struct_B4 };
+type mut_struct_A3 = struct { padding: u16, data: *mut_struct_A4 };
+type mut_struct_A4 = struct { padding: u16, data: mut_struct_A3 };
+// reverse
+type mut_struct_B4 = struct { padding: u16, data: mut_struct_B3 };
+type mut_struct_B3 = struct { padding: u16, data: *mut_struct_B4 };
 
 // mutually recursive indirect structs
-type mut_pstruct_A1 = *struct { data: mut_pstruct_A2 },
-	mut_pstruct_A2 = struct { data: mut_pstruct_A1 };
-type mut_pstruct_B2 = struct { data: mut_pstruct_B1 }, // reverse
-	mut_pstruct_B1 = *struct { data: mut_pstruct_B2 };
+type mut_pstruct_A1 = *struct { data: mut_pstruct_A2 };
+type mut_pstruct_A2 = struct { data: mut_pstruct_A1 };
+// reverse
+type mut_pstruct_B2 = struct { data: mut_pstruct_B1 };
+type mut_pstruct_B1 = *struct { data: mut_pstruct_B2 };
 
 // mutually recursive tagged unions
-type mut_tagged_A1 = (*mut_tagged_A2 | u8), mut_tagged_A2 = (mut_tagged_A1 | u8);
-type mut_tagged_B2 = (mut_tagged_B1 | u8), mut_tagged_B1 = (*mut_tagged_B2 | u8); // reverse
+type mut_tagged_A1 = (*mut_tagged_A2 | u8);
+type mut_tagged_A2 = (mut_tagged_A1 | u8);
+// reverse
+type mut_tagged_B2 = (mut_tagged_B1 | u8);
+type mut_tagged_B1 = (*mut_tagged_B2 | u8);
 
 // mutually recursive tagged unions with repeated members
-type mut_tagged_A3 = (*mut_tagged_A4 | u8 | *mut_tagged_A4),
-	mut_tagged_A4 = (mut_tagged_A3 | u8 | mut_tagged_A3 | mut_tagged_A3);
-type mut_tagged_B4 = (mut_tagged_B3 | u8 | mut_tagged_B3 | mut_tagged_B3), // reverse
-	mut_tagged_B3 = (*mut_tagged_B4 | u8 | *mut_tagged_A4);
+type mut_tagged_A3 = (*mut_tagged_A4 | u8 | *mut_tagged_A4);
+type mut_tagged_A4 = (mut_tagged_A3 | u8 | mut_tagged_A3 | mut_tagged_A3);
+// reverse
+type mut_tagged_B4 = (mut_tagged_B3 | u8 | mut_tagged_B3 | mut_tagged_B3);
+type mut_tagged_B3 = (*mut_tagged_B4 | u8 | *mut_tagged_A4);
 
 // mutually recursive indirect tagged unions
-type mut_ptagged_A1 = *(mut_ptagged_A2 | u8), mut_ptagged_A2 = (mut_ptagged_A1 | u8);
-type mut_ptagged_B2 = (mut_ptagged_B1 | u8), mut_ptagged_B1 = *(mut_ptagged_B2 | u8); // reverse
+type mut_ptagged_A1 = *(mut_ptagged_A2 | u8);
+type mut_ptagged_A2 = (mut_ptagged_A1 | u8);
+// reverse
+type mut_ptagged_B2 = (mut_ptagged_B1 | u8);
+type mut_ptagged_B1 = *(mut_ptagged_B2 | u8);
 
 // mutually recursive tuples
-type mut_tuple_A1 = (*mut_tuple_A2, u8), mut_tuple_A2 = (mut_tuple_A1, u8);
-type mut_tuple_B2 = (mut_tuple_B1, u8), mut_tuple_B1 = (*mut_tuple_B2, u8); // reverse
+type mut_tuple_A1 = (*mut_tuple_A2, u8);
+type mut_tuple_A2 = (mut_tuple_A1, u8);
+// reverse
+type mut_tuple_B2 = (mut_tuple_B1, u8);
+type mut_tuple_B1 = (*mut_tuple_B2, u8);
 
 // mutually recursive indirect tuples
-type mut_ptuple_A1 = *(mut_ptuple_A2, u8), mut_ptuple_A2 = (mut_ptuple_A1, u8);
-type mut_ptuple_B2 = (mut_ptuple_B1, u8), mut_ptuple_B1 = *(mut_ptuple_B2, u8); // reverse
+type mut_ptuple_A1 = *(mut_ptuple_A2, u8);
+type mut_ptuple_A2 = (mut_ptuple_A1, u8);
+// reverse
+type mut_ptuple_B2 = (mut_ptuple_B1, u8);
+type mut_ptuple_B1 = *(mut_ptuple_B2, u8);
 
 // type with a type dimension dependency
-type arri8_A = [size(arrintptr_A)]u8, arrintptr_A = [8]*int;
-type arrintptr_B = [8]*int, arri8_B = [size(arrintptr_B)]u8; // reverse
+type arri8_A = [size(arrintptr_A)]u8;
+type arrintptr_A = [8]*int;
+// reverse
+type arrintptr_B = [8]*int;
+type arri8_B = [size(arrintptr_B)]u8;
 
-type arri8_al_A = [align(arrintptr_al_A)]u8, arrintptr_al_A = [8]*int;
-type arrintptr_al_B = [8]*int, arri8_al_B = [align(arrintptr_al_B)]u8; // reverse
+type arri8_al_A = [align(arrintptr_al_A)]u8;
+type arrintptr_al_A = [8]*int;
+// reverse
+type arrintptr_al_B = [8]*int;
+type arri8_al_B = [align(arrintptr_al_B)]u8;
 
 type arr_circ = [size(*arr_circ)]int;
 
 // mutually recursive types with a dimension dependency
-type arru8_A = [size(arru8ptr_A)]u8, arru8ptr_A = [8]*arru8_A;
-type arru8ptr_B = [8]*arru8_B, arru8_B = [size(arru8ptr_B)]u8; // reverse
+type arru8_A = [size(arru8ptr_A)]u8;
+type arru8ptr_A = [8]*arru8_A;
+// reverse
+type arru8ptr_B = [8]*arru8_B;
+type arru8_B = [size(arru8ptr_B)]u8;
 
-type arru8_al_A = [align(arru8ptr_al_A)]u8, arru8ptr_al_A = [8]*arru8_al_A;
-type arru8ptr_al_B = [8]*arru8_al_B, arru8_al_B = [align(arru8ptr_al_B)]u8; // reverse
+type arru8_al_A = [align(arru8ptr_al_A)]u8;
+type arru8ptr_al_A = [8]*arru8_al_A;
+// reverse
+type arru8ptr_al_B = [8]*arru8_al_B;
+type arru8_al_B = [align(arru8ptr_al_B)]u8;
 
 // zero-size
 let v = void;
@@ -290,16 +328,17 @@ let zs = struct { v: void = void };
 let zt = (void, void);
 
 // unwrapped aliases to tagged unions
-type unwrap_A1 = ([32]u8 | void | str),
-	unwrap_A2 = (i64 | ...unwrap_A1),
-	unwrap_alias_A1 = unwrap_A2,
-	unwrap_alias_A2 = unwrap_alias_A1,
-	unwrap_alias_A3 = ...unwrap_alias_A2;
-type unwrap_alias_B3 = ...unwrap_alias_B2, // reverse
-	unwrap_alias_B2 = unwrap_alias_B1,
-	unwrap_alias_B1 = unwrap_B2,
-	unwrap_B2 = (i64 | ...unwrap_B1),
-	unwrap_B1 = ([32]u8 | void | str);
+type unwrap_A1 = ([32]u8 | void | str);
+type unwrap_A2 = (i64 | ...unwrap_A1);
+type unwrap_alias_A1 = unwrap_A2;
+type unwrap_alias_A2 = unwrap_alias_A1;
+type unwrap_alias_A3 = ...unwrap_alias_A2;
+// reverse
+type unwrap_alias_B3 = ...unwrap_alias_B2;
+type unwrap_alias_B2 = unwrap_alias_B1;
+type unwrap_alias_B1 = unwrap_B2;
+type unwrap_B2 = (i64 | ...unwrap_B1);
+type unwrap_B1 = ([32]u8 | void | str);
 
 fn sz() void = {
 	// size
@@ -360,7 +399,7 @@ fn hosted_main() void = {
 		`export @symbol("main") fn notmain() void;`,
 		"fn main() void;",
 		`export @symbol("notmain") fn main() int;`,
-		`export let @symbol("notmain") notmain: int;`,
+		`export @symbol("notmain") let notmain: int;`,
 		"export fn not::main() int;",
 	];
 
@@ -377,7 +416,7 @@ fn hosted_main() void = {
 		"export def main = 0;",
 		`export @symbol("main") fn f() int;`,
 		"export let main: int;",
-		`export let @symbol("main") notmain: int;`,
+		`export @symbol("main") let notmain: int;`,
 		"export type v = void; export fn main() v;",
 	];
 
@@ -430,11 +469,6 @@ fn reject() void = {
 		"@fini fn f(...) void = void;",
 		"@test fn f(...) void = void;",
 
-		// @symbol alongside other attributes
-		`@symbol("foo") @init fn foo() void = void;`,
-		`@symbol("foo") @fini fn foo() void = void;`,
-		`@symbol("foo") @test fn foo() void = void;`,
-
 		// initializing object with undefined size
 		"let a: [*]int = [1, 2, 3];",
 
@@ -450,6 +484,11 @@ fn reject() void = {
 		// binding not directly in compound expression
 		"export fn main() void = let a = 4;",
 		"export fn main() void = { if (true) let a = 4; };",
+
+		// @symbol alongside other attributes
+		`@symbol("foo") @init fn foo() void = void;`,
+		`@symbol("foo") @fini fn foo() void = void;`,
+		`@symbol("foo") @test fn foo() void = void;`,
 
 		// invalid symbol
 		`@symbol() fn f() void;`,
@@ -556,22 +595,22 @@ fn complete_graph() void = {
 	static assert(size(t_0) == 4097 * size(*opaque));
 };
 
-export let @symbol("s_x") s_d: int = -42;
-export let @symbol("s_y") s_c: int;
+export @symbol("s_x") let s_d: int = -42;
+export @symbol("s_y") let s_c: int;
 
-export let @symbol("s" `_` "x") s_e: int;
+export @symbol("s" `_` "x") let s_e: int;
 
-export let @symbol("x" "2") x2: int;
-export let @symbol("x" "$") x_: int;
-export let @symbol("x" "2x") x2x: int;
-export let @symbol("x" "$x") x_x: int;
+export @symbol("x" "2") let x2: int;
+export @symbol("x" "$") let x_: int;
+export @symbol("x" "2x") let x2x: int;
+export @symbol("x" "$x") let x_x: int;
 
-export let @symbol("y" "" "2") y2: int;
-export let @symbol("y" `` `` "$") y_: int;
-export let @symbol(`` "y" "2y") y2y: int;
-export let @symbol("" "y" "$y") y_y: int;
-export let @symbol("z" "2z" "") z2z: int;
-export let @symbol("z" "$z" ``) z_z: int;
+export @symbol("y" "" "2") let y2: int;
+export @symbol("y" `` `` "$") let y_: int;
+export @symbol(`` "y" "2y") let y2y: int;
+export @symbol("" "y" "$y") let y_y: int;
+export @symbol("z" "2z" "") let z2z: int;
+export @symbol("z" "$z" ``) let z_z: int;
 
 fn imported() void = {
 	// Decl. with symbol accessible by identifier

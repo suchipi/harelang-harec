@@ -34,10 +34,12 @@ usage(const char *argv_0)
 		"-v: print version and exit\n");
 }
 
-static struct ast_global_decl *
+static struct ast_decls *
 parse_define(const char *argv_0, const char *in, struct intern_table *itbl)
 {
-	struct ast_global_decl *def = xcalloc(1, sizeof(struct ast_global_decl));
+	struct ast_decls *decls = xcalloc(1, sizeof(struct ast_decls));
+	decls->decl.decl_type = ADECL_CONST;
+	struct ast_global_decl *def = &decls->decl.constant;
 
 	struct token tok;
 	struct lexer lexer;
@@ -49,6 +51,8 @@ parse_define(const char *argv_0, const char *in, struct intern_table *itbl)
 	const char *d = "-D";
 	sources = &d;
 	lex_init(&lexer, f, 0, itbl);
+
+	decls->decl.loc = lexer.loc;
 
 	def->ident = parse_identifier(&lexer, NULL, NULL);
 	def->type = NULL;
@@ -65,7 +69,8 @@ parse_define(const char *argv_0, const char *in, struct intern_table *itbl)
 	def->init = parse_expression(&lexer);
 
 	lex_finish(&lexer);
-	return def;
+
+	return decls;
 }
 
 int
@@ -77,7 +82,7 @@ main(int argc, char *argv[])
 	bool is_test = false;
 	struct unit unit = {0};
 	struct lexer lexer;
-	struct ast_global_decl *defines = NULL, **next_def = &defines;
+	struct ast_decls *defines = NULL, **next_def = &defines;
 	struct intern_table itbl;
 
 	intern_init(&itbl);

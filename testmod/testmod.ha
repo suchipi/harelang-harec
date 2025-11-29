@@ -27,8 +27,8 @@ export def val2: int = 90;
 export def val3: enum_alias = 1: enum_alias;
 export let val4 = 69;
 
-export let @symbol("s_x") s_a: int;
-export let @symbol("s_y") s_b: int = 1;
+export @symbol("s_x") let s_a: int;
+export @symbol("s_y") let s_b: int = 1;
 
 export type f64_alias = f64;
 export def val5: f64_alias = 0.0;
