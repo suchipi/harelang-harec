@@ -2536,16 +2536,11 @@ parse_decl(struct lexer *lexer, struct ast_decl *decl)
 		break;
 	case T_ATTR_SYMBOL:
 		symbol = parse_attr_symbol(lexer);
+		threadlocal = try(lexer, T_ATTR_THREADLOCAL);
 		break;
 	case T_ATTR_TEST:
 		flags |= FN_TEST;
 		break;
-	default:
-		unlex(lexer, &tok);
-		break;
-	}
-
-	switch (lex(lexer, &tok)) {
 	case T_ATTR_THREADLOCAL:
 		threadlocal = true;
 		break;

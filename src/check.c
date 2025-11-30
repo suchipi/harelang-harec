@@ -3936,9 +3936,7 @@ check_function(struct context *ctx,
 			flag = "@test";
 			break;
 		default:
-			error(ctx, adecl->loc, NULL,
-				"Only one of @init, @fini, or @test may be used in a function declaration");
-			break;
+			assert(0); // unreachable
 		}
 		if (obj->type->func.result != &builtin_type_void) {
 			error(ctx, adecl->loc, NULL, "%s function must return void", flag);
