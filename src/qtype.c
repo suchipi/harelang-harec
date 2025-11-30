@@ -214,7 +214,7 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 		break;
 	case STORAGE_DONE:
 	case STORAGE_ENUM:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_ALIAS:
 	case STORAGE_I8:
 	case STORAGE_U8:
@@ -299,7 +299,7 @@ qtype_lookup(struct gen_context *ctx,
 		return ctx->arch.ptr;
 	case STORAGE_VALIST:
 		return ctx->arch.ptr;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_NEVER:
 	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
@@ -362,7 +362,7 @@ type_is_aggregate(const struct type *type)
 	case STORAGE_RCONST:
 		lower_flexible(NULL, type, NULL);
 		return false;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
 		assert(0); // Invariant

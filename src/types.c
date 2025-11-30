@@ -65,7 +65,7 @@ type_dealias(struct context *ctx, const struct type *_type)
 					"Circular dependency for '%s'",
 					identstr);
 				free(identstr);
-				type->alias.type = &builtin_type_error;
+				type->alias.type = &builtin_type_invalid;
 			}
 		}
 		type = (struct type *)type->alias.type;
@@ -93,7 +93,7 @@ type_is_done(struct context *ctx, const struct type *type)
 const struct struct_field *
 type_get_field(struct context *ctx, const struct type *type, const char *name)
 {
-	if (type->storage == STORAGE_ERROR) {
+	if (type->storage == STORAGE_INVALID) {
 		return NULL;
 	}
 	assert(type->storage == STORAGE_STRUCT
@@ -167,7 +167,7 @@ type_storage_unparse(enum type_storage storage)
 		return "f32";
 	case STORAGE_F64:
 		return "f64";
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 		return "invalid";
 	case STORAGE_FCONST:
 		return "flexible float";
@@ -266,7 +266,7 @@ type_is_integer(struct context *ctx, const struct type *type)
 	case STORAGE_UNDEFINED:
 		return false;
 	case STORAGE_ENUM:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_I8:
 	case STORAGE_I16:
 	case STORAGE_I32:
@@ -312,7 +312,7 @@ type_is_numeric(struct context *ctx, const struct type *type)
 	case STORAGE_VALIST:
 	case STORAGE_UNDEFINED:
 		return false;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_ENUM:
 	case STORAGE_I8:
 	case STORAGE_I16:
@@ -343,7 +343,7 @@ type_is_float(struct context *ctx, const struct type *type)
 	type = type_dealias(ctx, type);
 	return type->storage == STORAGE_F32 || type->storage == STORAGE_F64
 		|| type->storage == STORAGE_FCONST
-		|| type->storage == STORAGE_ERROR;
+		|| type->storage == STORAGE_INVALID;
 }
 
 bool
@@ -358,7 +358,7 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_DONE:
 	case STORAGE_ARRAY:
 	case STORAGE_ENUM:
-	case STORAGE_ERROR: // XXX?
+	case STORAGE_INVALID: // XXX?
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
 	case STORAGE_NOMEM:
@@ -417,7 +417,7 @@ type_hash(const struct type *type)
 	hash = fnv1a(hash, type->flags);
 	switch (type->storage) {
 	case STORAGE_BOOL:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_I8:
@@ -538,7 +538,7 @@ type_equal(const struct type *a, const struct type *b)
 	case STORAGE_UINTPTR:
 	case STORAGE_UNDEFINED:
 	case STORAGE_VOID:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_VALIST:
 		return true;
 	case STORAGE_ALIAS:
@@ -978,7 +978,7 @@ type_is_assignable(struct context *ctx,
 		return true;
 	}
 
-	if (from->storage == STORAGE_ERROR
+	if (from->storage == STORAGE_INVALID
 			|| from->storage == STORAGE_NEVER
 			|| from->storage == STORAGE_UNDEFINED) {
 		return true;
@@ -1110,7 +1110,7 @@ type_is_assignable(struct context *ctx,
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 		return false;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_UNDEFINED:
 		return true;
 	}
@@ -1146,7 +1146,7 @@ is_castable_with_tagged(struct context *ctx,
 const struct type *
 type_is_castable(struct context *ctx, const struct type *to, const struct type *from)
 {
-	if (to->storage == STORAGE_ERROR) {
+	if (to->storage == STORAGE_INVALID) {
 		return to;
 	} else if (to->storage == STORAGE_UNDEFINED) {
 		return to;
@@ -1262,7 +1262,7 @@ type_is_castable(struct context *ctx, const struct type *to, const struct type *
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 		return NULL;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_TAGGED:
 	case STORAGE_ALIAS:
 	case STORAGE_UNDEFINED:
@@ -1334,7 +1334,7 @@ builtin_types_init(const char *target)
 		exit(EXIT_USER);
 	}
 	struct type *builtins[] = {
-		&builtin_type_bool, &builtin_type_error, &builtin_type_f32,
+		&builtin_type_bool, &builtin_type_invalid, &builtin_type_f32,
 		&builtin_type_f64, &builtin_type_i8, &builtin_type_i16,
 		&builtin_type_i32, &builtin_type_i64, &builtin_type_int,
 		&builtin_type_u8, &builtin_type_u16, &builtin_type_u32,
@@ -1354,8 +1354,8 @@ struct type builtin_type_bool = {
 	.size = 1,
 	.align = 1,
 },
-builtin_type_error = {
-	.storage = STORAGE_ERROR,
+builtin_type_invalid = {
+	.storage = STORAGE_INVALID,
 	.size = 0,
 	.align = 0,
 },

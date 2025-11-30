@@ -47,7 +47,7 @@ enum type_storage {
 	STORAGE_ICONST,
 	STORAGE_RCONST,
 	// For internal use only
-	STORAGE_ERROR,
+	STORAGE_INVALID,
 };
 
 struct context;
@@ -201,7 +201,7 @@ extern struct type
 	// Primitive
 	builtin_type_bool,
 	builtin_type_done,
-	builtin_type_error,
+	builtin_type_invalid,
 	builtin_type_f32,
 	builtin_type_f64,
 	builtin_type_i16,

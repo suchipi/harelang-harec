@@ -95,7 +95,7 @@ static void
 mkerror(struct expression *expr)
 {
 	expr->type = EXPR_LITERAL;
-	expr->result = &builtin_type_error;
+	expr->result = &builtin_type_invalid;
 	expr->literal.uval = 0;
 	expr->loc = (struct location){0};
 }
@@ -241,7 +241,7 @@ check_expr_access(struct context *ctx,
 		const struct type *atype = check_autodereference(ctx,
 				aexpr->access.array->loc, expr->access.array->result);
 		atype = type_dealias(ctx, atype);
-		if (atype->storage == STORAGE_ERROR) {
+		if (atype->storage == STORAGE_INVALID) {
 			mkerror(expr);
 			return;
 		}
@@ -294,7 +294,7 @@ check_expr_access(struct context *ctx,
 		const struct type *stype = check_autodereference(ctx,
 			aexpr->access._struct->loc, expr->access._struct->result);
 		stype = type_dealias(ctx, stype);
-		if (stype->storage == STORAGE_ERROR) {
+		if (stype->storage == STORAGE_INVALID) {
 			mkerror(expr);
 			return;
 		}
@@ -322,7 +322,7 @@ check_expr_access(struct context *ctx,
 		const struct type *ttype = check_autodereference(ctx,
 			aexpr->access.tuple->loc, expr->access.tuple->result);
 		ttype = type_dealias(ctx, ttype);
-		if (ttype->storage == STORAGE_ERROR) {
+		if (ttype->storage == STORAGE_INVALID) {
 			mkerror(expr);
 			return;
 		}
@@ -361,7 +361,7 @@ check_expr_alloc_init(struct context *ctx,
 {
 	// alloc(initializer) case
 	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, inithint);
-	if (expr->alloc.init->result->storage == STORAGE_ERROR) {
+	if (expr->alloc.init->result->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -426,7 +426,7 @@ check_expr_alloc_cap(struct context *ctx,
 {
 	// alloc(init, length/capacity) case
 	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, inithint);
-	if (expr->alloc.init->result->storage == STORAGE_ERROR) {
+	if (expr->alloc.init->result->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -491,7 +491,7 @@ check_expr_alloc_copy(struct context *ctx,
 {
 	// alloc(init...) case
 	check_expression(ctx, aexpr->alloc.init, expr->alloc.init, inithint);
-	if (expr->alloc.init->result->storage == STORAGE_ERROR) {
+	if (expr->alloc.init->result->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -597,7 +597,7 @@ check_expr_alloc(struct context *ctx,
 		abort(); // Not determined by parse
 	}
 
-	if (expr->result == &builtin_type_error) {
+	if (expr->result == &builtin_type_invalid) {
 		return;
 	}
 
@@ -623,7 +623,7 @@ check_expr_append_insert(struct context *ctx,
 	expr->append.is_multi = aexpr->append.is_multi;
 	expr->append.object = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aexpr->append.object, expr->append.object, NULL);
-	if (expr->append.object->result->storage == STORAGE_ERROR) {
+	if (expr->append.object->result->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -745,7 +745,7 @@ check_assert(struct context *ctx,
 		expr->assert.cond = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, e.cond, expr->assert.cond, &builtin_type_bool);
 		loc = e.cond->loc;
-		if (expr->assert.cond->result->storage == STORAGE_ERROR) {
+		if (expr->assert.cond->result->storage == STORAGE_INVALID) {
 			mkerror(expr);
 			return;
 		}
@@ -905,7 +905,7 @@ check_expr_assign(struct context *ctx,
 	check_expression(ctx, aexpr->assign.value, value, object->result);
 
 	if (object->type == EXPR_LITERAL
-			&& object->result != &builtin_type_error) {
+			&& object->result != &builtin_type_invalid) {
 		error(ctx, aexpr->assign.object->loc, expr,
 			"Cannot assign to constant");
 		return;
@@ -975,7 +975,7 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 		return b;
 	}
 
-	if (db->storage == STORAGE_ERROR) {
+	if (db->storage == STORAGE_INVALID) {
 		return a;
 	}
 
@@ -1045,7 +1045,7 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 			return b;
 		}
 		return NULL;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_NEVER:
 		return b;
 	case STORAGE_UINTPTR:
@@ -1093,7 +1093,7 @@ type_has_default(struct context *ctx, const struct type *type)
 	switch (type->storage) {
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_I16:
@@ -1189,8 +1189,8 @@ check_expr_binarithm(struct context *ctx,
 		*rvalue = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aexpr->binarithm.lvalue, lvalue, NULL);
 	check_expression(ctx, aexpr->binarithm.rvalue, rvalue, NULL);
-	if (lvalue->result->storage == STORAGE_ERROR
-			|| rvalue->result->storage == STORAGE_ERROR) {
+	if (lvalue->result->storage == STORAGE_INVALID
+			|| rvalue->result->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -1304,7 +1304,7 @@ check_expr_binding(struct context *ctx,
 		if (abinding->type
 				&& abinding->type->storage == STORAGE_ARRAY
 				&& abinding->type->array.contextual) {
-			if (initializer->result->storage == STORAGE_ERROR) {
+			if (initializer->result->storage == STORAGE_INVALID) {
 				// no-op
 			} else if (initializer->result->storage != STORAGE_ARRAY) {
 				error(ctx, aexpr->loc, expr,
@@ -1334,7 +1334,7 @@ check_expr_binding(struct context *ctx,
 			if (!eval_expr(ctx, initializer, value)) {
 				error(ctx, initializer->loc, value,
 					"Unable to evaluate constant initializer at compile time");
-				type = &builtin_type_error;
+				type = &builtin_type_invalid;
 			}
 			binding->initializer = value;
 			assert(abinding->names.name != NULL);
@@ -1429,7 +1429,7 @@ check_expr_call(struct context *ctx,
 	const struct type *fntype = check_autodereference(ctx,
 		aexpr->loc, lvalue->result);
 	fntype = type_dealias(ctx, fntype);
-	if (fntype->storage == STORAGE_ERROR) {
+	if (fntype->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -1546,8 +1546,8 @@ check_expr_cast(struct context *ctx,
 			secondary == &builtin_type_void ? NULL : secondary);
 
 	const struct type *primary = type_dealias(ctx, expr->cast.value->result);
-	if (primary->storage == STORAGE_ERROR
-			|| secondary->storage == STORAGE_ERROR) {
+	if (primary->storage == STORAGE_INVALID
+			|| secondary->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -1833,7 +1833,7 @@ check_expr_literal(struct context *ctx,
 		expr->literal.fval = aexpr->literal.fval;
 		break;
 	case STORAGE_ENUM:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_UINTPTR:
 	case STORAGE_ALIAS:
 	case STORAGE_FUNCTION:
@@ -2017,7 +2017,7 @@ check_expr_for_accumulator(struct context *ctx,
 	if (aexpr->_for.bindings) {
 		bindings = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, aexpr->_for.bindings, bindings, NULL);
-		if (bindings->result->storage == STORAGE_ERROR) {
+		if (bindings->result->storage == STORAGE_INVALID) {
 			// It won't be fruitful to continue checking if the
 			// bindings fail.
 			return;
@@ -2030,7 +2030,7 @@ check_expr_for_accumulator(struct context *ctx,
 	check_expression(ctx, aexpr->_for.cond, cond, &builtin_type_bool);
 	expr->_for.cond = cond;
 	if (type_dealias(ctx, cond->result)->storage != STORAGE_BOOL
-			&& cond->result->storage != STORAGE_ERROR) {
+			&& cond->result->storage != STORAGE_INVALID) {
 		error(ctx, aexpr->_for.cond->loc, expr,
 			"Expected for condition to be boolean");
 	}
@@ -2347,7 +2347,7 @@ check_expr_free(struct context *ctx,
 	}
 
 	enum type_storage storage = type_dealias(ctx, expr->free.expr->result)->storage;
-	if (storage == STORAGE_ERROR) {
+	if (storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -2401,7 +2401,7 @@ check_expr_if(struct context *ctx,
 	true_branch = lower_implicit_cast(ctx, expr->result, true_branch);
 	false_branch = lower_implicit_cast(ctx, expr->result, false_branch);
 
-	if (cond->result->storage == STORAGE_ERROR) {
+	if (cond->result->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -2479,7 +2479,7 @@ check_expr_match(struct context *ctx,
 	expr->match.value = value;
 
 	const struct type *type = type_dealias(ctx, value->result);
-	if (type->storage == STORAGE_ERROR) {
+	if (type->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -2489,7 +2489,7 @@ check_expr_match(struct context *ctx,
 	if (type->storage == STORAGE_POINTER) {
 		is_nullable_ptr = type->pointer.nullable;
 		ref_type = type_dealias(ctx, type->pointer.referent);
-		if (ref_type->storage == STORAGE_ERROR) {
+		if (ref_type->storage == STORAGE_INVALID) {
 			mkerror(expr);
 			return;
 		}
@@ -2622,7 +2622,7 @@ check_expr_measure(struct context *ctx,
 		type = type_dealias(ctx, type);
 		enum type_storage vstor = type->storage;
 		bool valid = vstor == STORAGE_ARRAY || vstor == STORAGE_SLICE
-			|| vstor == STORAGE_STRING || vstor == STORAGE_ERROR;
+			|| vstor == STORAGE_STRING || vstor == STORAGE_INVALID;
 		if (!valid) {
 			char *typename = gen_typename(expr->len.value->result);
 			error(ctx, aexpr->measure.value->loc, expr,
@@ -2660,7 +2660,7 @@ check_expr_measure(struct context *ctx,
 		}
 		struct expression *value = xcalloc(1, sizeof(struct expression));
 		check_expression(ctx, aexpr->measure.value, value, NULL);
-		if (value->result->storage == STORAGE_ERROR) {
+		if (value->result->storage == STORAGE_INVALID) {
 			return;
 		}
 		if (value->access.type == ACCESS_FIELD) {
@@ -2711,7 +2711,7 @@ check_expr_propagate(struct context *ctx,
 	check_expression(ctx, aexpr->propagate.value, lvalue, hint == &builtin_type_void ? NULL : hint);
 
 	const struct type *intype = lvalue->result;
-	if (intype->storage == STORAGE_ERROR) {
+	if (intype->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -2925,7 +2925,7 @@ check_expr_slice(struct context *ctx,
 
 	expr->slice.object = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aexpr->slice.object, expr->slice.object, NULL);
-	if (expr->slice.object->result->storage == STORAGE_ERROR) {
+	if (expr->slice.object->result->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -3349,7 +3349,7 @@ check_expr_switch(struct context *ctx,
 		for (const struct case_option *opt = _case->options;
 				opt; opt = opt->next) {
 			assert(i < n);
-			if (opt->value->result->storage != STORAGE_ERROR) {
+			if (opt->value->result->storage != STORAGE_INVALID) {
 				cases_array[i] = opt->value;
 				i++;
 			}
@@ -3367,7 +3367,7 @@ check_expr_switch(struct context *ctx,
 	}
 	free(cases_array);
 	if (!has_default_case && !has_duplicate
-			&& value->result->storage != STORAGE_ERROR
+			&& value->result->storage != STORAGE_INVALID
 			&& (n == (size_t)-1 || n != num_cases(ctx, value->result))) {
 		error(ctx, aexpr->loc, value,
 			"Switch expression isn't exhaustive");
@@ -3471,7 +3471,7 @@ check_expr_tuple(struct context *ctx,
 		}
 	} else {
 		expr->result = type_store_lookup_tuple(ctx, aexpr->loc, &result);
-		if (expr->result == &builtin_type_error) {
+		if (expr->result == &builtin_type_invalid) {
 			// an error occurred
 			return;
 		}
@@ -3520,7 +3520,7 @@ check_expr_unarithm(struct context *ctx,
 	check_expression(ctx, aexpr->unarithm.operand, operand, NULL);
 	expr->unarithm.operand = operand;
 	expr->unarithm.op = aexpr->unarithm.op;
-	if (operand->result->storage == STORAGE_ERROR) {
+	if (operand->result->storage == STORAGE_INVALID) {
 		mkerror(expr);
 		return;
 	}
@@ -3797,7 +3797,7 @@ check_function(struct context *ctx,
 {
 	const struct ast_function_decl *afndecl = &adecl->function;
 	ctx->fntype = obj->type;
-	if (ctx->fntype->storage == STORAGE_ERROR) {
+	if (ctx->fntype->storage == STORAGE_INVALID) {
 		return;
 	}
 
@@ -4016,7 +4016,7 @@ scan_types(struct context *ctx, struct scope *imp, const struct ast_decl *decl)
 		bool exported = obj->idecl->decl.exported;
 		const struct type *type = type_store_lookup_enum(
 				ctx, t->type, exported);
-		if (type->storage == STORAGE_ERROR) {
+		if (type->storage == STORAGE_INVALID) {
 			return; // error occured
 		}
 		scope_push((struct scope **)&type->_enum.values, SCOPE_ENUM);
@@ -4092,7 +4092,7 @@ check_exported_type(struct context *ctx,
 		break;
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_FCONST:
@@ -4142,7 +4142,7 @@ resolve_const(struct context *ctx, struct scope_object *obj)
 		if (type->storage == STORAGE_NULL) {
 			error(ctx, decl->init->loc, obj->value,
 				"Null is not a valid type for a constant");
-			type = &builtin_type_error;
+			type = &builtin_type_invalid;
 			goto end;
 		}
 	}
@@ -4159,7 +4159,7 @@ resolve_const(struct context *ctx, struct scope_object *obj)
 			typename1, typename2);
 		free(typename1);
 		free(typename2);
-		type = &builtin_type_error;
+		type = &builtin_type_invalid;
 		goto end;
 	}
 	if (decl->type) {
@@ -4174,7 +4174,7 @@ resolve_const(struct context *ctx, struct scope_object *obj)
 	if (!eval_expr(ctx, init, obj->value)) {
 		error(ctx, decl->init->loc, obj->value,
 			"Unable to evaluate initializer at compile time");
-		type = &builtin_type_error;
+		type = &builtin_type_invalid;
 		goto end;
 	}
 end:
@@ -4265,7 +4265,7 @@ resolve_global(struct context *ctx, struct scope_object *obj)
 		if (context && !decl->init) {
 			error(ctx, decl->type->loc, NULL,
 				"Cannot infer array length without an initializer");
-			type = &builtin_type_error;
+			type = &builtin_type_invalid;
 			goto end;
 		}
 	}
@@ -4283,7 +4283,7 @@ resolve_global(struct context *ctx, struct scope_object *obj)
 					typename1, typename2);
 				free(typename1);
 				free(typename2);
-				type = &builtin_type_error;
+				type = &builtin_type_invalid;
 				goto end;
 			}
 		} else {
@@ -4297,20 +4297,20 @@ resolve_global(struct context *ctx, struct scope_object *obj)
 		if (type->size == SIZE_UNDEFINED) {
 			error(ctx, decl->init->loc, NULL,
 				"Cannot initialize object with undefined size");
-			type = &builtin_type_error;
+			type = &builtin_type_invalid;
 			goto end;
 		}
 		assert(type->size != SIZE_UNDEFINED);
 		if (type->storage == STORAGE_NULL) {
 			error(ctx, decl->init->loc, NULL,
 				"Can't initialize global as null without explicit type hint");
-			type = &builtin_type_error;
+			type = &builtin_type_invalid;
 			goto end;
 		}
 		if (!eval_expr(ctx, init, value)) {
 			error(ctx, decl->init->loc, value,
 				"Unable to evaluate initializer at compile time");
-			type = &builtin_type_error;
+			type = &builtin_type_invalid;
 			goto end;
 		}
 	}
@@ -4508,7 +4508,7 @@ resolve_dimensions(struct context *ctx, struct scope_object *obj)
 		char *ident = ident_unparse(obj->name);
 		error(ctx, loc, NULL, "'%s' is not a type", ident);
 		free(ident);
-		obj->type = &builtin_type_error;
+		obj->type = &builtin_type_invalid;
 		return;
 	}
 	struct dimensions dim = type_store_lookup_dimensions(ctx,
@@ -4553,7 +4553,7 @@ resolve_type(struct context *ctx, struct scope_object *obj)
 		alias->alias.type = type_store_lookup_atype(
 			ctx, obj->idecl->decl.type.type);
 	} else {
-		alias->alias.type = &builtin_type_error;
+		alias->alias.type = &builtin_type_invalid;
 	}
 	assert(alias->alias.type != NULL);
 	if (obj->idecl->decl.exported) {
@@ -4562,7 +4562,7 @@ resolve_type(struct context *ctx, struct scope_object *obj)
 	}
 	if (alias->alias.type->storage == STORAGE_NEVER) {
 		error(ctx, loc, NULL, "Can't declare type alias of never");
-		alias->alias.type = &builtin_type_error;
+		alias->alias.type = &builtin_type_invalid;
 	}
 
 	append_decl(ctx, &(struct declaration){

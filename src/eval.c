@@ -106,7 +106,7 @@ itrunc(struct context *ctx, const struct type *type, uint64_t val)
 		return itrunc(ctx, type_dealias(ctx, type), val);
 	case STORAGE_ENUM:
 		return itrunc(ctx, type->alias.type, val);
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 		return val;
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
@@ -468,7 +468,7 @@ eval_literal(struct context *ctx,
 		break;
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_F64:
 	case STORAGE_FCONST:
 	case STORAGE_NOMEM:
@@ -586,7 +586,7 @@ eval_cast(struct context *ctx,
 		return true;
 	}
 
-	if (from->storage == STORAGE_ERROR) {
+	if (from->storage == STORAGE_INVALID) {
 		return true;
 	} else if (from->storage == STORAGE_UNDEFINED) {
 		out->type = EXPR_UNDEFINED;
@@ -692,7 +692,7 @@ eval_cast(struct context *ctx,
 	case STORAGE_VALIST:
 		assert(0); // Invariant
 	case STORAGE_DONE:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_NOMEM:
 	case STORAGE_VOID:
 	case STORAGE_UNDEFINED:
@@ -724,7 +724,7 @@ eval_len(struct context *ctx,
 	case STORAGE_STRING:
 		out->literal.uval = obj.literal.string.len;
 		return true;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 		out->literal.uval = 0;
 		return true;
 	case STORAGE_ARRAY:
@@ -747,7 +747,7 @@ literal_default(struct context *ctx, struct expression *v)
 	struct expression b = {0};
 	const struct type *t = type_dealias(ctx, v->result);
 	switch (t->storage) {
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_POINTER:
 	case STORAGE_I16:
 	case STORAGE_I32:
@@ -1183,9 +1183,9 @@ eval_unarithm(struct context *ctx,
 	struct expression *restrict out)
 {
 	if (in->unarithm.op == UN_ADDRESS) {
-		if (in->unarithm.operand->result == &builtin_type_error) {
+		if (in->unarithm.operand->result == &builtin_type_invalid) {
 			out->type = EXPR_LITERAL;
-			out->result = &builtin_type_error;
+			out->result = &builtin_type_invalid;
 			out->literal.uval = 0;
 			return true;
 		}

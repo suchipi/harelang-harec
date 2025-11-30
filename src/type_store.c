@@ -48,8 +48,8 @@ builtin_type_for_storage(enum type_storage storage)
 	switch (storage) {
 	case STORAGE_BOOL:
 		return &builtin_type_bool;
-	case STORAGE_ERROR:
-		return &builtin_type_error;
+	case STORAGE_INVALID:
+		return &builtin_type_invalid;
 	case STORAGE_F32:
 		return &builtin_type_f32;
 	case STORAGE_F64:
@@ -232,7 +232,7 @@ check_embedded_member(struct context *ctx,
 			&& dealiased->storage != STORAGE_UNION) {
 		error(ctx, afield->type->loc, NULL,
 			"Cannot embed non-struct non-union alias");
-		member->type = &builtin_type_error;
+		member->type = &builtin_type_invalid;
 		return false;
 	}
 
@@ -390,7 +390,7 @@ tagged_size(struct context *ctx, const struct ast_tagged_union_type *atype)
 			type_store_lookup_atype(ctx, atype->type);
 		unwrapped = type_dealias(ctx, unwrapped);
 		if (unwrapped->storage != STORAGE_TAGGED) {
-			if (unwrapped->storage != STORAGE_ERROR) {
+			if (unwrapped->storage != STORAGE_INVALID) {
 				error(ctx, atype->type->loc, NULL,
 					"Can't reduce non-tagged-union type %s",
 					gen_typename(unwrapped));
@@ -459,7 +459,7 @@ tagged_init(struct context *ctx, struct type *type,
 	}
 
 	if (invalid) {
-		*type = builtin_type_error;
+		*type = builtin_type_invalid;
 		return;
 	}
 
@@ -491,12 +491,12 @@ tagged_init_from_atype(struct context *ctx,
 
 		memb = type_dealias(ctx, memb);
 		if (memb->storage != STORAGE_TAGGED) {
-			if (memb->storage != STORAGE_ERROR) {
+			if (memb->storage != STORAGE_INVALID) {
 				error(ctx, atype->loc, NULL,
 					"Can't reduce non-tagged-union type %s",
 					gen_typename(memb));
 			}
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return;
 		}
 		assert(memb->storage == STORAGE_TAGGED);
@@ -509,7 +509,7 @@ tagged_init_from_atype(struct context *ctx,
 	if (type->tagged.len <= 1) {
 		error(ctx, atype->loc, NULL,
 			"Tagged unions must have at least two distinct members");
-		*type = builtin_type_error;
+		*type = builtin_type_invalid;
 	}
 }
 
@@ -536,7 +536,7 @@ tuple_init_from_atype(struct context *ctx,
 			error(ctx, atype->loc, NULL,
 				"Type of undefined size is not a valid tuple member");
 			if (type) {
-				*type = builtin_type_error;
+				*type = builtin_type_invalid;
 			}
 			return (struct dimensions){0};
 		}
@@ -577,7 +577,7 @@ default_param_from_atype(struct context *ctx,
 	// updated later, so it cannot be on the stack.
 	struct expression *in = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aparam->default_value, in, param->type);
-	if (in->result->storage == STORAGE_ERROR) {
+	if (in->result->storage == STORAGE_INVALID) {
 		return false;
 	}
 	if (!type_is_assignable(ctx, param->type, in->result)) {
@@ -625,7 +625,7 @@ type_init_from_atype(struct context *ctx,
 	struct scope_object *obj = NULL;
 	const struct type *builtin;
 	switch (type->storage) {
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_FCONST:
 	case STORAGE_ICONST:
 	case STORAGE_RCONST:
@@ -638,7 +638,7 @@ type_init_from_atype(struct context *ctx,
 			error(ctx, atype->loc, NULL,
 				"Error flag can't be used on %s type",
 				type_storage_unparse(atype->storage));
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		// fallthrough
@@ -675,7 +675,7 @@ type_init_from_atype(struct context *ctx,
 			error(ctx, atype->loc, NULL,
 				"Unresolvable identifier '%s'", ident);
 			free(ident);
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 
@@ -696,7 +696,7 @@ type_init_from_atype(struct context *ctx,
 			error(ctx, atype->loc, NULL,
 				"Object '%s' is not a type", ident);
 			free(ident);
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 
@@ -707,7 +707,7 @@ type_init_from_atype(struct context *ctx,
 		if ((atype->flags & TYPE_ERROR) && type_is_done(ctx, obj->type)) {
 			error(ctx, atype->loc, NULL,
 				"Error flag can't be used on done type");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		type->alias.ident = obj->ident;
@@ -727,21 +727,21 @@ type_init_from_atype(struct context *ctx,
 			type->array.members = type_store_lookup_atype(ctx,
 				atype->array.members);
 			memb = dim_from_type(type->array.members);
-			if (type->array.members->storage == STORAGE_ERROR) {
-				*type = builtin_type_error;
+			if (type->array.members->storage == STORAGE_INVALID) {
+				*type = builtin_type_invalid;
 				return (struct dimensions){0};
 			}
 		}
 		if (memb.size == 0) {
 			error(ctx, atype->loc, NULL,
 				"Type of size 0 is not a valid array member");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (memb.size == SIZE_UNDEFINED) {
 			error(ctx, atype->loc, NULL,
 				"Type of undefined size is not a valid array member");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 
@@ -770,14 +770,14 @@ type_init_from_atype(struct context *ctx,
 			if (param->type->size == SIZE_UNDEFINED) {
 				error(ctx, atype->loc, NULL,
 					"Function parameter types must have defined size");
-				*type = builtin_type_error;
+				*type = builtin_type_invalid;
 				return (struct dimensions){0};
 			}
 			if (aparam->default_value != NULL) {
 				has_optional = true;
 				if (!default_param_from_atype(ctx,
 						aparam, param)) {
-					*type = builtin_type_error;
+					*type = builtin_type_invalid;
 					return (struct dimensions){0};
 				}
 			} else if (atype->func.variadism == VARIADISM_HARE
@@ -787,7 +787,7 @@ type_init_from_atype(struct context *ctx,
 			} else if (has_optional) {
 				error(ctx, atype->loc, NULL,
 					"Required function parameter may not follow optional parameters");
-				*type = builtin_type_error;
+				*type = builtin_type_invalid;
 				return (struct dimensions){0};
 			}
 			next = &param->next;
@@ -802,20 +802,20 @@ type_init_from_atype(struct context *ctx,
 		type->pointer.nullable = atype->pointer.nullable;
 		type->pointer.referent = type_store_lookup_atype(
 			ctx, atype->pointer.referent);
-		if (type->pointer.referent->storage == STORAGE_ERROR) {
-			*type = builtin_type_error;
+		if (type->pointer.referent->storage == STORAGE_INVALID) {
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->pointer.referent->size == 0) {
 			error(ctx, atype->loc, NULL,
 				"Can't have pointer to zero-sized type");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->pointer.referent->storage == STORAGE_NEVER) {
 			error(ctx, atype->loc, NULL,
 				"Can't have pointer to never");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		break;
@@ -828,20 +828,20 @@ type_init_from_atype(struct context *ctx,
 		}
 		type->array.members = type_store_lookup_atype(ctx,
 				atype->slice.members);
-		if (type->array.members->storage == STORAGE_ERROR) {
-			*type = builtin_type_error;
+		if (type->array.members->storage == STORAGE_INVALID) {
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->array.members->size == 0) {
 			error(ctx, atype->loc, NULL,
 				"Type of size 0 is not a valid slice member");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->array.members->storage == STORAGE_NEVER) {
 			error(ctx, atype->loc, NULL,
 				"never is not a valid slice member");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		type->array.length = SIZE_UNDEFINED;
@@ -849,7 +849,7 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
 		if (!struct_init_from_atype(ctx, type, atype, size_only)) {
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->storage == STORAGE_UNION || !type->struct_union.packed) {
@@ -904,8 +904,8 @@ type_store_lookup_type(struct context *ctx, const struct type *type)
 			if (bucket->type.storage == STORAGE_ALIAS) {
 				type = type->alias.type;
 				bucket->type.alias.type = type;
-				if (type && type->storage == STORAGE_ERROR) {
-					return &builtin_type_error;
+				if (type && type->storage == STORAGE_INVALID) {
+					return &builtin_type_invalid;
 			}
 			}
 			return &bucket->type;
@@ -960,20 +960,20 @@ const struct type *
 type_store_lookup_pointer(struct context *ctx, struct location loc,
 	const struct type *referent, bool nullable)
 {
-	if (referent->storage == STORAGE_ERROR) {
-		return &builtin_type_error;
+	if (referent->storage == STORAGE_INVALID) {
+		return &builtin_type_invalid;
 	}
 	if (referent->storage == STORAGE_NULL) {
 		error(ctx, loc, NULL, "Null type not allowed in this context");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	if (referent->size == 0) {
 		error(ctx, loc, NULL, "Can't have pointer to zero-sized type");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	if (referent->storage == STORAGE_NEVER) {
 		error(ctx, loc, NULL, "Can't have pointer to never");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	referent = lower_flexible(ctx, referent, NULL);
 
@@ -993,23 +993,23 @@ const struct type *
 type_store_lookup_array(struct context *ctx, struct location loc,
 	const struct type *members, size_t len, bool expandable)
 {
-	if (members->storage == STORAGE_ERROR) {
-		return &builtin_type_error;
+	if (members->storage == STORAGE_INVALID) {
+		return &builtin_type_invalid;
 	}
 	if (members->storage == STORAGE_NULL) {
 		error(ctx, loc, NULL, "Null type not allowed in this context");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	members = lower_flexible(ctx, members, NULL);
 	if (members->size == 0) {
 		error(ctx, loc, NULL,
 			"Type of size 0 is not a valid array member");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	if (members->size == SIZE_UNDEFINED) {
 		error(ctx, loc, NULL,
 			"Type of undefined size is not a valid member of a bounded array");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	assert(members->align != 0);
 	assert(members->align != ALIGN_UNDEFINED);
@@ -1033,18 +1033,18 @@ const struct type *
 type_store_lookup_slice(struct context *ctx, struct location loc,
 	const struct type *members)
 {
-	if (members->storage == STORAGE_ERROR) {
-		return &builtin_type_error;
+	if (members->storage == STORAGE_INVALID) {
+		return &builtin_type_invalid;
 	}
 	if (members->storage == STORAGE_NULL) {
 		error(ctx, loc, NULL, "Null type not allowed in this context");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	members = lower_flexible(ctx, members, NULL);
 	if (members->size == 0) {
 		error(ctx, loc, NULL,
 			"Type of size 0 is not a valid slice member");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	assert(members->align != 0);
 
@@ -1111,19 +1111,19 @@ type_store_lookup_tuple(struct context *ctx, struct location loc,
 		.storage = STORAGE_TUPLE,
 	};
 	for (struct type_tuple *t = values; t; t = t->next) {
-		if (t->type->storage == STORAGE_ERROR) {
-			return &builtin_type_error;
+		if (t->type->storage == STORAGE_INVALID) {
+			return &builtin_type_invalid;
 		}
 		if (t->type->storage == STORAGE_NULL) {
 			error(ctx, loc, NULL,
 				"Null type not allowed in this context");
-			return &builtin_type_error;
+			return &builtin_type_invalid;
 		}
 		t->type = lower_flexible(ctx, t->type, NULL);
 		if (t->type->size == SIZE_UNDEFINED) {
 			error(ctx, loc, NULL,
 				"Type of undefined size is not a valid tuple member");
-			return &builtin_type_error;
+			return &builtin_type_invalid;
 		}
 		assert(t->type->align != ALIGN_UNDEFINED);
 
@@ -1158,7 +1158,7 @@ type_store_lookup_enum(struct context *ctx, const struct ast_type *atype,
 			&& type.alias.type->storage != STORAGE_RUNE) {
 		error(ctx, atype->loc, NULL,
 			"Enum storage must be an integer or rune");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	type.size = type.alias.type->size;
 	type.align = type.alias.type->size;
@@ -1208,7 +1208,7 @@ type_store_reduce_result(struct context *ctx, struct location loc,
 	size_t new_len = 0;
 	for (size_t i = 0; i < type.tagged.len; i++) {
 		const struct type *memb = type.tagged.types[i];
-		if (memb->storage == STORAGE_NEVER || memb->storage == STORAGE_ERROR) {
+		if (memb->storage == STORAGE_NEVER || memb->storage == STORAGE_INVALID) {
 			continue;
 		}
 		if (memb->storage == STORAGE_NULL) {

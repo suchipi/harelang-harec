@@ -194,7 +194,7 @@ emit_literal(const struct expression *expr, FILE *out)
 	case STORAGE_UNION:
 		assert(0); // TODO, blocked on union support in eval
 	case STORAGE_ALIAS:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
 	case STORAGE_NOMEM:
@@ -235,7 +235,7 @@ emit_type(const struct type *type, FILE *out)
 	switch (type->storage) {
 	case STORAGE_BOOL:
 	case STORAGE_DONE:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_FCONST:

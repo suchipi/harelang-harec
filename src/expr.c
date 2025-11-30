@@ -19,7 +19,7 @@ expr_hash(const struct expression *expr)
 
 	switch (storage) {
 	case STORAGE_DONE:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_VOID:
@@ -111,7 +111,7 @@ expr_equal(const struct expression *a, const struct expression *b)
 
 	switch (astor) {
 	case STORAGE_DONE:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_VOID:
