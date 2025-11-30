@@ -46,6 +46,7 @@ enum type_storage {
 	STORAGE_FCONST,
 	STORAGE_ICONST,
 	STORAGE_RCONST,
+	STORAGE_ERROR,
 	// For internal use only
 	STORAGE_INVALID,
 };
@@ -129,14 +130,9 @@ struct type_tagged_union {
 	size_t cap;
 };
 
-enum type_flags {
-	TYPE_ERROR = 1 << 0,
-};
-
 struct type {
 	enum type_storage storage;
 	uint32_t id;
-	unsigned int flags;
 	size_t size, align;
 	union {
 		struct {
@@ -144,6 +140,7 @@ struct type {
 			struct type_enum _enum;
 		};
 		struct type_array array;
+		const struct type *error;
 		struct type_flexible flexible;
 		struct type_func func;
 		struct type_pointer pointer;
@@ -175,6 +172,7 @@ bool type_is_integer(struct context *ctx, const struct type *type);
 bool type_is_numeric(struct context *ctx, const struct type *type);
 bool type_is_float(struct context *ctx, const struct type *type);
 bool type_is_flexible(const struct type *type);
+bool type_is_error(struct context *ctx, const struct type *type);
 bool type_has_error(struct context *ctx, const struct type *type);
 
 uint32_t type_hash(const struct type *type);

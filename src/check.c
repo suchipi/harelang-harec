@@ -268,8 +268,7 @@ check_expr_access(struct context *ctx,
 		}
 		expr->access.index = lower_implicit_cast(ctx, 
 			&builtin_type_size, expr->access.index);
-		expr->result = type_store_lookup_with_flags(ctx,
-			atype->array.members, atype->flags | atype->array.members->flags);
+		expr->result = atype->array.members;
 
 		// Compile-time bounds check
 		if (atype->storage == STORAGE_ARRAY
@@ -944,27 +943,29 @@ static const struct type *
 type_promote(struct context *ctx, const struct type *a, const struct type *b)
 {
 	// Note: we must return either a, b, or NULL
-	// TODO: There are likely some improperly handled edge cases around type
-	// flags, both here and in the spec
-	const struct type *da = type_store_lookup_with_flags(ctx, a, 0);
-	const struct type *db = type_store_lookup_with_flags(ctx, b, 0);
 
-	if (da == db) {
-		const struct type *base = type_store_lookup_with_flags(ctx, a,
-			a->flags | b->flags);
-		assert(base == a || base == b);
-		return base;
+	if (a == b) {
+		return a;
 	}
 
 	if (a->storage == STORAGE_ALIAS && b->storage == STORAGE_ALIAS) {
 		return NULL;
 	}
 
-	da = type_dealias(ctx, da);
-	db = type_dealias(ctx, db);
-
+	// TODO: There are likely some improperly handled edge cases around type
+	// flags, both here and in the spec
+	const struct type *da = type_dealias(ctx, a);
+	const struct type *db = type_dealias(ctx, b);
 	if (da == db) {
-		return a->storage == STORAGE_ALIAS ? a : b;
+		if (a->storage == STORAGE_ALIAS) {
+			return a;
+		} else if (b->storage == STORAGE_ALIAS) {
+			return b;
+		} else if (a->storage == STORAGE_ERROR) {
+			return a;
+		} else {
+			return b;
+		}
 	}
 
 	if (type_is_flexible(da) || type_is_flexible(db)) {
@@ -1077,6 +1078,7 @@ type_promote(struct context *ctx, const struct type *a, const struct type *b)
 		return NULL;
 	// Handled above
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 	case STORAGE_FCONST:
 	case STORAGE_ICONST:
 	case STORAGE_RCONST:
@@ -1166,6 +1168,7 @@ type_has_default(struct context *ctx, const struct type *type)
 		}
 		return true;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		return type_has_default(ctx, type_dealias(ctx, type));
 	case STORAGE_FCONST:
 	case STORAGE_ICONST:
@@ -1346,8 +1349,6 @@ check_expr_binding(struct context *ctx,
 		}
 		if (!type) {
 			type = initializer->result;
-			// XXX why is this needed?
-			type = type_store_lookup_with_flags(ctx, type, 0);
 		}
 		if (abinding->names.next != NULL) {
 			if (!create_unpack_bindings(ctx, type,
@@ -1836,6 +1837,7 @@ check_expr_literal(struct context *ctx,
 	case STORAGE_INVALID:
 	case STORAGE_UINTPTR:
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
@@ -2737,7 +2739,7 @@ check_expr_propagate(struct context *ctx,
 
 	const struct type_tagged_union *intu = &type_dealias(ctx, intype)->tagged;
 	for (size_t i = 0; i < intu->len; i++) {
-		tagged_append(intu->types[i]->flags & TYPE_ERROR ? &ret : &res,
+		tagged_append(type_is_error(ctx, intu->types[i]) ? &ret : &res,
 			intu->types[i]);
 	}
 
@@ -4063,6 +4065,9 @@ check_exported_type(struct context *ctx,
 	case STORAGE_SLICE:
 		check_exported_type(ctx, loc, type->array.members);
 		break;
+	case STORAGE_ERROR:
+		check_exported_type(ctx, loc, type->error);
+		break;
 	case STORAGE_FUNCTION:
 		for (const struct type_func_param *param = type->func.params;
 				param; param = param->next) {
@@ -4239,7 +4244,6 @@ resolve_function(struct context *ctx, struct scope_object *obj)
 	const struct ast_type fn_atype = {
 		.loc = obj->idecl->decl.loc,
 		.storage = STORAGE_FUNCTION,
-		.flags = 0,
 		.func = decl->prototype,
 	};
 	const struct type *fntype = type_store_lookup_atype(ctx, &fn_atype);
@@ -4543,8 +4547,7 @@ resolve_type(struct context *ctx, struct scope_object *obj)
 
 	// compute type representation and store it
 	struct type *alias = (struct type *)type_store_lookup_alias(ctx, obj->ident,
-			obj->name, NULL, obj->idecl->decl.type.type->flags,
-			obj->idecl->decl.exported);
+			obj->name, NULL, obj->idecl->decl.exported);
 	obj->otype = O_TYPE;
 	obj->type = alias;
 	if (ctx->next == cur_err) {

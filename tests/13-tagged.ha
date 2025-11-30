@@ -1,13 +1,13 @@
 use rt::{compile, status};
 
-def size_tag = 4119164483;
-def f32_tag = 1568378015;
-def int_tag = 1099590421;
-def void_tag = 4288073506;
-def u8_tag = 2543892678;
-def u16_tag = 1906196061;
-def u32_tag = 1268499444;
-def u64_tag = 3181589295;
+def size_tag = 185362065;
+def f32_tag = 118251589;
+def int_tag = 218917303;
+def void_tag = 302805398;
+def u8_tag = 369915874;
+def u16_tag = 353138255;
+def u32_tag = 336360636;
+def u64_tag = 386693493;
 
 fn measurements() void = {
 	const x: (u8 | u16 | u32 | u64) = 1337u16;	// With padding

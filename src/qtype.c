@@ -221,6 +221,7 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	case STORAGE_I16:
 	case STORAGE_U16:
 	case STORAGE_BOOL:
+	case STORAGE_ERROR:
 	case STORAGE_I32:
 	case STORAGE_U32:
 	case STORAGE_RCONST:
@@ -287,6 +288,8 @@ qtype_lookup(struct gen_context *ctx,
 	case STORAGE_ENUM:
 	case STORAGE_ALIAS:
 		return qtype_lookup(ctx, type->alias.type, xtype);
+	case STORAGE_ERROR:
+		return qtype_lookup(ctx, type->error, xtype);
 	case STORAGE_ARRAY:
 	case STORAGE_SLICE:
 	case STORAGE_STRING:
@@ -348,6 +351,8 @@ type_is_aggregate(const struct type *type)
 		return false;
 	case STORAGE_ALIAS:
 		return type_is_aggregate(type->alias.type);
+	case STORAGE_ERROR:
+		return type_is_aggregate(type->error);
 	case STORAGE_ARRAY:
 	case STORAGE_SLICE:
 	case STORAGE_STRING:

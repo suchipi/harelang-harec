@@ -635,11 +635,7 @@ struct ast_type *
 parse_type(struct lexer *lexer)
 {
 	struct token tok = {0};
-	uint32_t flags = 0;
 	try(lexer, T_CONST);
-	if (try(lexer, T_LNOT)) {
-		flags |= TYPE_ERROR;
-	}
 	struct ast_type *type = NULL;
 	bool nullable = false;
 	switch (lex(lexer, &tok)) {
@@ -668,6 +664,11 @@ parse_type(struct lexer *lexer)
 	case T_VOID:
 		unlex(lexer, &tok);
 		type = parse_primitive_type(lexer);
+		break;
+	case T_LNOT:
+		type = mktype(lexer->loc);
+		type->storage = STORAGE_ERROR;
+		type->error = parse_type(lexer);
 		break;
 	case T_NULLABLE:
 		nullable = true;
@@ -731,7 +732,6 @@ parse_type(struct lexer *lexer)
 		synassert_msg(false, "expected type", &tok);
 		break;
 	}
-	type->flags |= flags;
 
 	return type;
 }
@@ -847,6 +847,7 @@ parse_literal(struct lexer *lexer)
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 		assert(0); // Handled in a different nonterminal
+	case STORAGE_ERROR:
 	case STORAGE_INVALID:
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:

@@ -98,9 +98,9 @@ struct ast_struct_union_type {
 struct ast_type {
 	struct location loc;
 	enum type_storage storage;
-	unsigned int flags;
 	union {
 		struct ast_array_type array;
+		struct ast_type *error;
 		struct ast_function_type func;
 		struct ast_pointer_type pointer;
 		struct ast_slice_type slice;

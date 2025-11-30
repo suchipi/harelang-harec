@@ -14,6 +14,7 @@ type_dereference(struct context *ctx, const struct type *type, bool allow_nullab
 {
 	switch (type->storage) {
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		if (type_dealias(ctx, type)->storage != STORAGE_POINTER) {
 			return type;
 		}
@@ -51,7 +52,11 @@ const struct type *
 type_dealias(struct context *ctx, const struct type *_type)
 {
 	struct type *type = (struct type *)_type;
-	while (type->storage == STORAGE_ALIAS) {
+	while (type->storage == STORAGE_ALIAS || type->storage == STORAGE_ERROR) {
+		if (type->storage == STORAGE_ERROR) {
+			type = (struct type *)type->error;
+			continue;
+		}
 		if (type->alias.type == NULL) {
 			// gen et al. don't have access to the check context,
 			// but by that point all aliases should already be fully
@@ -69,6 +74,15 @@ type_dealias(struct context *ctx, const struct type *_type)
 			}
 		}
 		type = (struct type *)type->alias.type;
+	}
+	return type;
+}
+
+const struct type *
+strip_error(const struct type *type)
+{
+	while (type->storage == STORAGE_ERROR) {
+		type = type->error;
 	}
 	return type;
 }
@@ -132,11 +146,22 @@ type_get_value(const struct type *type, uint64_t index)
 	return NULL;
 }
 
+bool
+type_is_error(struct context *ctx, const struct type *type)
+{
+	while (type->storage == STORAGE_ALIAS) {
+		// Complete the alias
+		type_dealias(ctx, type);
+		type = type->alias.type;
+	}
+	return type->storage == STORAGE_ERROR || type->storage == STORAGE_NOMEM;
+}
+
 // Returns true if this type is or contains an error type
 bool
 type_has_error(struct context *ctx, const struct type *type)
 {
-	if (type->flags & TYPE_ERROR) {
+	if (type_is_error(ctx, type)) {
 		return true;
 	}
 	type = type_dealias(ctx, type);
@@ -144,7 +169,7 @@ type_has_error(struct context *ctx, const struct type *type)
 		return false;
 	}
 	for (size_t i = 0; i < type->tagged.len; i++) {
-		if (type->tagged.types[i]->flags & TYPE_ERROR) {
+		if (type_is_error(ctx, type->tagged.types[i])) {
 			return true;
 		}
 	}
@@ -163,6 +188,8 @@ type_storage_unparse(enum type_storage storage)
 		return "bool";
 	case STORAGE_ENUM:
 		return "enum";
+	case STORAGE_ERROR:
+		return "error";
 	case STORAGE_F32:
 		return "f32";
 	case STORAGE_F64:
@@ -282,6 +309,7 @@ type_is_integer(struct context *ctx, const struct type *type)
 	case STORAGE_UINTPTR:
 		return true;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		return type_is_integer(ctx, type_dealias(ctx, type));
 	}
 	assert(0); // Unreachable
@@ -332,6 +360,7 @@ type_is_numeric(struct context *ctx, const struct type *type)
 	case STORAGE_UINTPTR:
 		return true;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		return type_is_numeric(ctx, type_dealias(ctx, type));
 	}
 	assert(0); // Unreachable
@@ -396,6 +425,7 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_ICONST:
 		return type->flexible.min < 0;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		assert(0); // Handled above
 	}
 	assert(0); // Unreachable
@@ -414,7 +444,6 @@ type_hash(const struct type *type)
 {
 	uint32_t hash = FNV1A_INIT;
 	hash = fnv1a(hash, type->storage);
-	hash = fnv1a(hash, type->flags);
 	switch (type->storage) {
 	case STORAGE_BOOL:
 	case STORAGE_INVALID:
@@ -448,6 +477,9 @@ type_hash(const struct type *type)
 		/* fallthrough */
 	case STORAGE_ALIAS:
 		hash = ident_hash(hash, type->alias.ident);
+		break;
+	case STORAGE_ERROR:
+		hash = fnv1a_u32(hash, type_hash(type->error));
 		break;
 	case STORAGE_ARRAY:
 		hash = fnv1a_u32(hash, type_hash(type->array.members));
@@ -544,6 +576,8 @@ type_equal(const struct type *a, const struct type *b)
 	case STORAGE_ALIAS:
 	case STORAGE_ENUM:
 		return ident_equal(a->alias.ident, b->alias.ident);
+	case STORAGE_ERROR:
+		return type_equal(a->error, b->error);
 	case STORAGE_ARRAY:
 	case STORAGE_SLICE:
 		return a->array.length == b->array.length
@@ -631,20 +665,6 @@ type_equal(const struct type *a, const struct type *b)
 	assert(0); // Unreachable
 }
 
-// Note that the type this returns is NOT a type singleton and cannot be treated
-// as such.
-static const struct type *
-strip_flags(const struct type *t, struct type *secondary)
-{
-	if (!t->flags) {
-		return t;
-	}
-	*secondary = *t;
-	secondary->flags = 0;
-	secondary->id = type_hash(secondary);
-	return secondary;
-}
-
 void
 tagged_append(struct type_tagged_union *tagged, const struct type *memb)
 {
@@ -679,8 +699,7 @@ tagged_select_subtype(struct context *ctx, const struct type *tagged,
 	tagged = type_dealias(ctx, tagged);
 	assert(tagged->storage == STORAGE_TAGGED);
 
-	struct type _stripped;
-	const struct type *stripped = strip_flags(subtype, &_stripped);
+	const struct type *stripped = strip_error(subtype);
 
 	size_t nassign = 0;
 	const struct type *selected = NULL;
@@ -698,9 +717,8 @@ tagged_select_subtype(struct context *ctx, const struct type *tagged,
 
 	if (strip) {
 		for (size_t i = 0; i < tagged->tagged.len; i++) {
-			struct type _tustripped;
-			const struct type *tustripped = strip_flags(
-				tagged->tagged.types[i], &_tustripped);
+			const struct type *tustripped =
+				strip_error(tagged->tagged.types[i]);
 			if (tustripped->id == stripped->id) {
 				return tagged->tagged.types[i];
 			}
@@ -971,10 +989,10 @@ type_is_assignable(struct context *ctx,
 		from = type_dealias(ctx, from);
 	}
 
-	// const and non-const types are mutually assignable
-	struct type _to, _from;
-	to = strip_flags(to, &_to), from = strip_flags(from, &_from);
-	if (to->id == from->id && to->storage != STORAGE_VOID) {
+	// error and non-error types are mutually assignable
+	to = strip_error(to);
+	from = strip_error(from);
+	if (to == from && to->storage != STORAGE_VOID) {
 		return true;
 	}
 
@@ -988,7 +1006,6 @@ type_is_assignable(struct context *ctx,
 		return promote_flexible(ctx, to_orig, from_orig);
 	}
 
-	struct type _to_secondary, _from_secondary;
 	const struct type *to_secondary, *from_secondary;
 	switch (to->storage) {
 	case STORAGE_FCONST:
@@ -1016,13 +1033,13 @@ type_is_assignable(struct context *ctx,
 		return type_is_float(ctx, from);
 	case STORAGE_POINTER:
 		to_secondary = to->pointer.referent;
-		to_secondary = strip_flags(to_secondary, &_to_secondary);
+		to_secondary = strip_error(to_secondary);
 		switch (from->storage) {
 		case STORAGE_NULL:
 			return to->pointer.nullable;
 		case STORAGE_POINTER:
 			from_secondary = from->pointer.referent;
-			from_secondary = strip_flags(from_secondary, &_from_secondary);
+			from_secondary = strip_error(from_secondary);
 			if (struct_subtype(ctx, to_secondary, from_secondary)) {
 				return true;
 			}
@@ -1035,7 +1052,7 @@ type_is_assignable(struct context *ctx,
 				}
 				break;
 			default:
-				if (to_secondary->id != from_secondary->id) {
+				if (to_secondary != from_secondary) {
 					return false;
 				}
 				break;
@@ -1052,8 +1069,8 @@ type_is_assignable(struct context *ctx,
 		assert(to->alias.type);
 		return type_is_assignable(ctx, to->alias.type, from);
 	case STORAGE_VOID:
-		return to->id == from->id &&
-			(from_orig->flags & TYPE_ERROR)	== (to_orig->flags & TYPE_ERROR);
+		return to == from &&
+			type_is_error(ctx, from_orig) == type_is_error(ctx, to_orig);
 	case STORAGE_SLICE:
 		if (from->storage == STORAGE_POINTER) {
 			from = type_dealias(ctx, from->pointer.referent);
@@ -1066,16 +1083,12 @@ type_is_assignable(struct context *ctx,
 				|| from->array.length == SIZE_UNDEFINED)) {
 			return false;
 		}
-		to_secondary = strip_flags(
-			to->array.members,
-			&_to_secondary);
-		from_secondary = strip_flags(
-			from->array.members,
-			&_from_secondary);
+		to_secondary = strip_error(to->array.members);
+		from_secondary = strip_error(from->array.members);
 		if (to_secondary->storage == STORAGE_OPAQUE) {
 			return true;
 		}
-		return to_secondary->id == from_secondary->id;
+		return to_secondary == from_secondary;
 	case STORAGE_ARRAY:
 		if (from->storage != STORAGE_ARRAY) {
 			return false;
@@ -1113,6 +1126,8 @@ type_is_assignable(struct context *ctx,
 	case STORAGE_INVALID:
 	case STORAGE_UNDEFINED:
 		return true;
+	case STORAGE_ERROR:
+		assert(0); // Handled above
 	}
 
 	assert(0); // Unreachable
@@ -1163,9 +1178,10 @@ type_is_castable(struct context *ctx, const struct type *to, const struct type *
 		return to_orig;
 	}
 
-	struct type _to, _from;
-	to = strip_flags(to, &_to), from = strip_flags(from, &_from);
-	if (to->id == from->id) {
+	to = strip_error(to);
+	from = strip_error(from);
+
+	if (to == from) {
 		return to_orig;
 	}
 
@@ -1265,6 +1281,7 @@ type_is_castable(struct context *ctx, const struct type *to, const struct type *
 	case STORAGE_INVALID:
 	case STORAGE_TAGGED:
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 	case STORAGE_UNDEFINED:
 		assert(0); // Handled above
 	}
@@ -1397,7 +1414,6 @@ builtin_type_never = {
 },
 builtin_type_nomem = {
 	.storage = STORAGE_NOMEM,
-	.flags = TYPE_ERROR,
 	.size = 0,
 	.align = 0,
 },

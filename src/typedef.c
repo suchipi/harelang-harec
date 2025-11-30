@@ -200,6 +200,7 @@ emit_literal(const struct expression *expr, FILE *out)
 	case STORAGE_NOMEM:
 		xfprintf(out, "nomem");
 		break;
+	case STORAGE_ERROR:
 	case STORAGE_OPAQUE:
 	case STORAGE_VALIST:
 	case STORAGE_UNDEFINED:
@@ -227,10 +228,6 @@ emit_struct(const struct type *type, FILE *out)
 void
 emit_type(const struct type *type, FILE *out)
 {
-	if (type->flags & TYPE_ERROR) {
-		xfprintf(out, "!");
-	}
-
 	char *ident;
 	switch (type->storage) {
 	case STORAGE_BOOL:
@@ -262,6 +259,10 @@ emit_type(const struct type *type, FILE *out)
 	case STORAGE_VOID:
 	case STORAGE_UNDEFINED:
 		xfprintf(out, "%s", type_storage_unparse(type->storage));
+		break;
+	case STORAGE_ERROR:
+		xfprintf(out, "!");
+		emit_type(type->error, out);
 		break;
 	case STORAGE_POINTER:
 		xfprintf(out, "%s*", type->pointer.nullable ? "nullable " : "");

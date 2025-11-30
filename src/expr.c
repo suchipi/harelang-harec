@@ -87,6 +87,7 @@ expr_hash(const struct expression *expr)
 		hash = fnv1a_u32(hash, type_hash(expr->literal.tagged.tag));
 		hash = fnv1a_u32(hash, expr_hash(expr->literal.tagged.value));
 		break;
+	case STORAGE_ERROR:
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
 	case STORAGE_FUNCTION:
@@ -191,6 +192,7 @@ expr_equal(const struct expression *a, const struct expression *b)
 	case STORAGE_TAGGED:
 		return a->literal.tagged.tag == b->literal.tagged.tag
 			&& expr_equal(a->literal.tagged.value, b->literal.tagged.value);
+	case STORAGE_ERROR:
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
 	case STORAGE_FUNCTION:

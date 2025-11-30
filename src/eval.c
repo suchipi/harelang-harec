@@ -102,6 +102,7 @@ itrunc(struct context *ctx, const struct type *type, uint64_t val)
 		return val;
 	case STORAGE_NULL:
 		return (uintptr_t)NULL;
+	case STORAGE_ERROR:
 	case STORAGE_ALIAS:
 		return itrunc(ctx, type_dealias(ctx, type), val);
 	case STORAGE_ENUM:
@@ -410,6 +411,7 @@ eval_literal(struct context *ctx,
 	switch (storage) {
 	case STORAGE_ALIAS:
 	case STORAGE_ENUM:
+	case STORAGE_ERROR:
 		assert(0); // Handled above
 	case STORAGE_ARRAY:;
 		struct array_literal **anext = &out->literal.array;
@@ -680,6 +682,7 @@ eval_cast(struct context *ctx,
 		return true;
 	case STORAGE_NULL:
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		assert(0); // Handled above
 	case STORAGE_BOOL:
 	case STORAGE_FUNCTION:
@@ -820,6 +823,7 @@ literal_default(struct context *ctx, struct expression *v)
 		}
 		break;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:

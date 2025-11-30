@@ -100,6 +100,7 @@ builtin_type_for_storage(enum type_storage storage)
 		return &builtin_type_undefined;
 	case STORAGE_ALIAS:
 	case STORAGE_ARRAY:
+	case STORAGE_ERROR:
 	case STORAGE_FUNCTION:
 	case STORAGE_FCONST:
 	case STORAGE_ICONST:
@@ -119,9 +120,6 @@ builtin_type_for_storage(enum type_storage storage)
 static const struct type *
 builtin_for_type(const struct type *type)
 {
-	if (type->flags & TYPE_ERROR) {
-		return NULL;
-	}
 	return builtin_type_for_storage(type->storage);
 }
 
@@ -275,7 +273,6 @@ shift_fields(struct context *ctx,
 		|| type->storage == STORAGE_UNION);
 	struct type new = {
 		.storage = type->storage,
-		.flags = type->flags,
 		.size = type->size,
 		.align = type->align,
 		.struct_union.packed = type->struct_union.packed,
@@ -620,7 +617,6 @@ type_init_from_atype(struct context *ctx,
 	}
 
 	type->storage = atype->storage;
-	type->flags = atype->flags;
 
 	struct scope_object *obj = NULL;
 	const struct type *builtin;
@@ -634,14 +630,6 @@ type_init_from_atype(struct context *ctx,
 		assert(0); // Invariant
 	case STORAGE_DONE:
 	case STORAGE_NEVER:
-		if (atype->flags & TYPE_ERROR) {
-			error(ctx, atype->loc, NULL,
-				"Error flag can't be used on %s type",
-				type_storage_unparse(atype->storage));
-			*type = builtin_type_invalid;
-			return (struct dimensions){0};
-		}
-		// fallthrough
 	case STORAGE_BOOL:
 	case STORAGE_F32:
 	case STORAGE_F64:
@@ -667,6 +655,25 @@ type_init_from_atype(struct context *ctx,
 		builtin = builtin_type_for_storage(type->storage);
 		type->size = builtin->size;
 		type->align = builtin->align;
+		break;
+	case STORAGE_ERROR:;
+		struct dimensions dims = { 0 };
+		if (!size_only) {
+			type->error = type_store_lookup_atype(ctx, atype->error);
+			enum type_storage secondary = type_dealias(ctx, type->error)->storage;
+			if (secondary == STORAGE_DONE || secondary == STORAGE_NEVER) {
+				error(ctx, atype->loc, NULL,
+					"%s cannot be an error",
+					type_storage_unparse(secondary));
+				*type = builtin_type_invalid;
+				return (struct dimensions){0};
+			}
+			dims = dim_from_type(type->error);
+		} else {
+			dims = type_store_lookup_dimensions(ctx, atype->error);
+		}
+		type->size = dims.size;
+		type->align = dims.align;
 		break;
 	case STORAGE_ALIAS:
 		obj = scope_lookup(ctx->scope, atype->alias);
@@ -703,12 +710,6 @@ type_init_from_atype(struct context *ctx,
 		type->storage = obj->type->storage;
 		if (obj->type->storage == STORAGE_ENUM) {
 			type->_enum = obj->type->_enum;
-		}
-		if ((atype->flags & TYPE_ERROR) && type_is_done(ctx, obj->type)) {
-			error(ctx, atype->loc, NULL,
-				"Error flag can't be used on done type");
-			*type = builtin_type_invalid;
-			return (struct dimensions){0};
 		}
 		type->alias.ident = obj->ident;
 		type->alias.name = obj->name;
@@ -927,13 +928,6 @@ type_store_lookup_atype(struct context *ctx, const struct ast_type *atype)
 	}
 	struct type temp = {0};
 	type_init_from_atype(ctx, &temp, atype);
-	if (temp.storage == STORAGE_ALIAS) {
-		// References to type aliases always inherit the flags that the
-		// alias was defined with
-		const struct scope_object *obj = scope_lookup(
-			ctx->scope, temp.alias.name);
-		temp.flags |= obj->type->flags;
-	}
 	return type_store_lookup_type(ctx, &temp);
 }
 
@@ -942,18 +936,6 @@ struct dimensions
 type_store_lookup_dimensions(struct context *ctx, const struct ast_type *atype)
 {
 	return type_init_from_atype(ctx, NULL, atype);
-}
-
-const struct type *
-type_store_lookup_with_flags(struct context *ctx,
-	const struct type *type, unsigned int flags)
-{
-	if (type->flags == flags) {
-		return type;
-	}
-	struct type new = *type;
-	new.flags = flags;
-	return type_store_lookup_type(ctx, &new);
 }
 
 const struct type *
@@ -1062,12 +1044,10 @@ type_store_lookup_slice(struct context *ctx, struct location loc,
 
 const struct type *
 type_store_lookup_alias(struct context *ctx, struct ident *ident,
-	struct ident *name, const struct type *secondary, int flags,
-	bool exported)
+	struct ident *name, const struct type *secondary, bool exported)
 {
 	struct type type = {
 		.storage = STORAGE_ALIAS,
-		.flags = flags,
 		.alias.type = secondary,
 		.alias.ident = ident,
 		.alias.name = name,
@@ -1149,7 +1129,6 @@ type_store_lookup_enum(struct context *ctx, const struct ast_type *atype,
 {
 	struct type type = {0};
 	type.storage = STORAGE_ENUM;
-	type.flags = atype->flags;
 	type.alias.ident = mkident(ctx, atype->alias, NULL);
 	type.alias.name = atype->alias;
 	type.alias.exported = exported;
@@ -1227,9 +1206,6 @@ type_store_reduce_result(struct context *ctx, struct location loc,
 			}
 			// XXX: Why are we comparing IDs here?
 			if (memb->pointer.referent->id != other->pointer.referent->id) {
-				continue;
-			}
-			if (memb->flags != other->flags) {
 				continue;
 			}
 			if (!memb->pointer.nullable && !other->pointer.nullable) {

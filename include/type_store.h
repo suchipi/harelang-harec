@@ -34,9 +34,6 @@ struct dimensions type_store_lookup_dimensions(
 
 const struct type *builtin_type_for_storage(enum type_storage storage);
 
-const struct type *type_store_lookup_with_flags(struct context *ctx,
-	const struct type *type, unsigned int flags);
-
 const struct type *type_store_lookup_pointer(struct context *ctx,
 	struct location loc, const struct type *referent, bool nullable);
 
@@ -49,7 +46,7 @@ const struct type *type_store_lookup_slice(struct context *ctx,
 
 const struct type *type_store_lookup_alias(struct context *ctx,
 	struct ident *ident, struct ident *name,
-	const struct type *secondary, int flags, bool exported);
+	const struct type *secondary, bool exported);
 
 const struct type *type_store_lookup_tagged(struct context *ctx,
 	struct location loc, struct type_tagged_union *tags);
