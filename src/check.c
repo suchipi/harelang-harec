@@ -2205,8 +2205,13 @@ check_expr_for_each(struct context *ctx,
 	}
 
 	if (binding_type != NULL && !type_is_assignable(ctx, var_type, initializer_result)) {
+		char *init = gen_typename(initializer_result);
+		char *bind = gen_typename(var_type);
 		error(ctx, aexpr->loc, expr,
-			"Initializer is not assignable to binding type");
+			"Initializer of type %s is not assignable to binding of type %s",
+			init, bind);
+		free(init);
+		free(bind);
 		return;
 	}
 
@@ -3120,8 +3125,13 @@ check_expr_struct(struct context *ctx,
 					sexpr->value, ftype);
 
 			if (!type_is_assignable(ctx, sexpr->field->type, sexpr->value->result)) {
+				char *init = gen_typename(sexpr->value->result);
+				char *bind = gen_typename(sexpr->field->type);
 				error(ctx, afield->initializer->loc, expr,
-					"Initializer is not assignable to struct field");
+					"Initializer of type %s not assignable to struct field of type %s",
+					init, bind);
+				free(init);
+				free(bind);
 				return;
 			}
 			sexpr->value = lower_implicit_cast(ctx, 
