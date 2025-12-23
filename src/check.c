@@ -3308,8 +3308,13 @@ check_expr_switch(struct context *ctx,
 
 			check_expression(ctx, aopt->value, value, type);
 			if (!type_is_assignable(ctx, type, value->result)) {
+				char *vtype = gen_typename(value->result);
+				char *stype = gen_typename(type);
 				error(ctx, aopt->value->loc, expr,
-					"Invalid type for switch case");
+					"Invalid type %s for case in switch on type %s",
+					vtype, stype);
+				free(vtype);
+				free(stype);
 				return;
 			}
 			value = lower_implicit_cast(ctx, type, value);
@@ -3482,8 +3487,13 @@ check_expr_tuple(struct context *ctx,
 			return;
 		}
 		if (!type_is_assignable(ctx, ttuple->type, etuple->value->result)) {
+			char *vtype = gen_typename(etuple->value->result);
+			char *ttype= gen_typename(ttuple->type);
 			error(ctx, atuple->expr->loc, expr,
-				"Value is not assignable to tuple value type");
+				"Value of type %s is not assignable to tuple value of type %s",
+				vtype, ttype);
+			free(vtype);
+			free(ttype);
 			return;
 		}
 		etuple->value = lower_implicit_cast(ctx, ttuple->type, etuple->value);
