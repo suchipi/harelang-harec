@@ -512,6 +512,7 @@ type_hash(const struct type *type)
 		break;
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
+		hash = fnv1a_size(hash, type->size);
 		for (const struct struct_field *field = type->struct_union.fields;
 				field; field = field->next) {
 			if (field->name) {
@@ -614,7 +615,10 @@ type_equal(const struct type *a, const struct type *b)
 		return a->pointer.nullable == b->pointer.nullable
 			&& type_equal(a->pointer.referent, b->pointer.referent);
 	case STORAGE_STRUCT:
-	case STORAGE_UNION:;
+	case STORAGE_UNION:
+		if (a->size != b->size) {
+			return false;
+		}
 		const struct struct_field *field_a = a->struct_union.fields;
 		const struct struct_field *field_b = b->struct_union.fields;
 		while (field_a && field_b) {

@@ -263,4 +263,11 @@ export fn main() void = {
 	free(c);
 
 	compile(status::CHECK, "let x: nullable *int = &(0: [*]int)[0];")!;
+
+	let x: struct @packed { a: u64, b: u8 } = @undefined;
+	let y: struct { a: u64, b: u8 } = @undefined;
+	let tx = (x, 0u8);
+	let ty = (y, 0u8);
+	assert(offset(tx.1) == 9);
+	assert(offset(ty.1) == 16);
 };
