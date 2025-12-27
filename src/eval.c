@@ -1148,8 +1148,7 @@ eval_address_other(struct context *ctx,
 		return false;
 	}
 
-	static int serial = 0;
-	char *symbol = gen_name(&serial, "static.%d");
+	char *symbol = gen_name(&ctx->id, "static.%d");
 	struct ident *name = mkident(ctx, NULL, symbol);
 
 	append_decl(ctx, &(struct declaration){
