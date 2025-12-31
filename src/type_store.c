@@ -1231,7 +1231,9 @@ type_store_reduce_result(struct context *ctx, struct location loc,
 
 	if (have_null) {
 		if (nptrs != 1) {
-			return NULL;
+			error(ctx, loc, NULL,
+				"Invalid result type (dangling or ambiguous null)");
+			return &builtin_type_invalid;
 		}
 		// XXX: Flags?
 		type.tagged.types[ptr_index] = type_store_lookup_pointer(ctx, loc,

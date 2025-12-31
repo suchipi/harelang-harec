@@ -270,4 +270,6 @@ export fn main() void = {
 	let ty = (y, 0u8);
 	assert(offset(tx.1) == 9);
 	assert(offset(ty.1) == 16);
+
+	compile(status::CHECK, "fn x() void = { match (void: (int | void)) { case int => yield null; case void => void; }; };")!;
 };

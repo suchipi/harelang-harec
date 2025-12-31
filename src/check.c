@@ -2394,11 +2394,6 @@ check_expr_if(struct context *ctx,
 		const struct type *tags[] = { fresult, true_branch->result };
 		struct type_tagged_union tagged = { .types = tags, .len = 2 };
 		expr->result = type_store_reduce_result(ctx, aexpr->loc, &tagged);
-		if (expr->result == NULL) {
-			error(ctx, aexpr->loc, expr,
-				"Invalid result type (dangling or ambiguous null)");
-			return;
-		}
 	}
 	true_branch = lower_implicit_cast(ctx, expr->result, true_branch);
 	false_branch = lower_implicit_cast(ctx, expr->result, false_branch);
@@ -3380,11 +3375,6 @@ check_expr_switch(struct context *ctx,
 	} else {
 		expr->result = type_store_reduce_result(
 			ctx, aexpr->loc, &tagged);
-		if (expr->result == NULL) {
-			error(ctx, aexpr->loc, expr,
-				"Invalid result type (dangling or ambiguous null)");
-			return;
-		}
 	}
 
 	_case = expr->_switch.cases;
