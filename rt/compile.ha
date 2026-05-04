@@ -4,6 +4,7 @@ export type status = enum {
 	LEX,
 	PARSE,
 	CHECK,
+	_EXEC_FAILED,
 	ABNORMAL = 255,
 };
 
@@ -21,6 +22,8 @@ fn strstatus(status: int) str = {
 		return "check (4)";
 	case status::ABNORMAL =>
 		return "abnormal (255)";
+	case status::_EXEC_FAILED =>
+		return "internal error: compiler execve failed";
 	case =>
 		return itos(status: int);
 	};
@@ -45,26 +48,23 @@ export fn compile(
 		close(1);
 		close(2);
 
-		let argv: []nullable *const u8 = [];
-		defer for (let i = 0z; i < len(argv); i += 1) {
-			free(argv[i]);
-		};
 		// FIXME use $BINOUT variable
-		append(argv, alloc_constchar("./.bin/harec"));
-		for (let i = 0z; i < len(flags); i += 1) {
-			append(argv, alloc_constchar(flags[i]));
-		};
-		append(argv, alloc_constchar("-o/dev/null"));
-		append(argv, alloc_constchar("-"));
-		append(argv, null);
+		let harec = alloc_cstr("./.bin/harec");
+		let argv: []nullable *u8 = alloc([harec]...)!;
 
-		execve(constchar("./.bin/harec\0"), *(&argv: **[*]nullable *const u8), envp);
-		abort();
+		for (let i = 0z; i < len(flags); i += 1) {
+			append(argv, alloc_cstr(flags[i]))!;
+		};
+		append(argv, [alloc_cstr("-o/dev/null"), alloc_cstr("-"), null]...)!;
+
+		execve(harec, *(&argv: **[*]nullable *u8), envp);
+		exit(status::_EXEC_FAILED);
 	} else {
 		assert(child != -1, "fork(2) failed");
 		close(pipefd[0]);
 
-		const buf = constchar(src): *const [*]u8;
+		const buf = alloc_cstr(src): *const [*]u8;
+		defer free(buf);
 		for (let n = 0z; n < len(src)) {
 			let m = write(pipefd[1], &buf[n], len(src) - n): size;
 			assert(m > 0, "write(2) failed");
@@ -77,11 +77,9 @@ export fn compile(
 
 	if (!wifexited(wstatus)) {
 		assert(wifsignaled(wstatus));
-		let s = "signaled ";
-		write(2, constchar(s), len(s));
-		s = itos(wtermsig(wstatus));
-		write(2, constchar(s), len(s));
-		write(2, constchar("\n"), 1);
+		write_stderr("signaled ");
+		write_stderr(itos(wtermsig(wstatus)));
+		write_stderr("\n");
 		return error;
 	};
 
@@ -89,22 +87,23 @@ export fn compile(
 	case void =>
 		const status = wexitstatus(wstatus);
 		if (status == status::SUCCESS) {
-			let s = "expected any failure, got success\n";
-			write(2, constchar(s), len(s));
+			write_stderr("expected any failure, got success\n");
 			return error;
 		};
 	case let expected: status =>
-		const status = wexitstatus(wstatus);
-		if (status != expected) {
+		const exit_status = wexitstatus(wstatus);
+		if (exit_status == status::_EXEC_FAILED) {
+			write_stderr(strstatus(exit_status));
+			write_stderr("\n");
+			return error;
+		};
+		if (exit_status != expected) {
 			let s = "expected ";
-			write(2, constchar(s), len(s));
-			s = strstatus(expected);
-			write(2, constchar(s), len(s));
-			s = ", got ";
-			write(2, constchar(s), len(s));
-			s = strstatus(status);
-			write(2, constchar(s), len(s));
-			write(2, constchar("\n"), 1);
+			write_stderr("expected ");
+			write_stderr(strstatus(expected));
+			write_stderr(", got ");
+			write_stderr(strstatus(exit_status));
+			write_stderr("\n");
 			return error;
 		};
 	};

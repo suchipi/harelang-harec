@@ -10,73 +10,109 @@
 #include "util.h"
 
 const struct type *
-type_dereference(struct context *ctx, const struct type *type)
+type_dereference(struct context *ctx, const struct type *type, bool allow_nullable)
 {
 	switch (type->storage) {
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		if (type_dealias(ctx, type)->storage != STORAGE_POINTER) {
 			return type;
 		}
-		return type_dereference(ctx, type_dealias(ctx, type));
+		return type_dereference(ctx, type_dealias(ctx, type), allow_nullable);
 	case STORAGE_POINTER:
-		if (type->pointer.flags & PTR_NULLABLE) {
+		if (!allow_nullable && type->pointer.nullable) {
 			return NULL;
 		}
-		return type_dereference(ctx, type->pointer.referent);
+		return type_dereference(ctx, type->pointer.referent, allow_nullable);
 	default:
 		return type;
 	}
 }
 
-void
+static const struct scope_object *
 complete_alias(struct context *ctx, struct type *type)
 {
 	assert(type->storage == STORAGE_ALIAS);
 	const struct scope_object *obj =
-		scope_lookup(ctx->scope, &type->alias.name);
+		scope_lookup(ctx->scope, type->alias.name);
 	assert(obj != NULL);
 	assert(obj->otype == O_TYPE || obj->otype == O_SCAN);
-	struct incomplete_declaration *idecl =
-		(struct incomplete_declaration *)obj;
-	assert(idecl->type == IDECL_DECL);
+	assert(obj->idecl->type == IDECL_DECL);
 
-	if (idecl->dealias_in_progress) {
-		char *identstr = identifier_unparse(&idecl->obj.name);
-		error(ctx, idecl->decl.loc, NULL,
-			"Circular dependency for '%s'", identstr);
-		free(identstr);
-		type->alias.type = &builtin_type_error;
-		return;
+	if (!obj->idecl->dealias_in_progress) {
+		obj->idecl->dealias_in_progress = true;
+		type->alias.type = type_store_lookup_atype(
+			ctx, obj->idecl->decl.type.type);
+		obj->idecl->dealias_in_progress = false;
 	}
-	idecl->dealias_in_progress = true;
-	type->alias.type = type_store_lookup_atype(ctx, idecl->decl.type.type);
-	idecl->dealias_in_progress = false;
+	return obj;
 }
 
 const struct type *
-type_dealias(struct context *ctx, const struct type *type)
+type_dealias(struct context *ctx, const struct type *_type)
 {
-	while (type->storage == STORAGE_ALIAS) {
+	struct type *type = (struct type *)_type;
+	while (type->storage == STORAGE_ALIAS || type->storage == STORAGE_ERROR) {
+		if (type->storage == STORAGE_ERROR) {
+			type = (struct type *)type->error;
+			continue;
+		}
 		if (type->alias.type == NULL) {
 			// gen et al. don't have access to the check context,
 			// but by that point all aliases should already be fully
 			// scanned
 			assert(ctx != NULL);
+			const struct scope_object *obj =
+				complete_alias(ctx, type);
+			if (type->alias.type == NULL) {
+				char *identstr = ident_unparse(obj->name);
+				error(ctx, obj->idecl->decl.loc, NULL,
+					"Circular dependency for '%s'",
+					identstr);
+				free(identstr);
+				type->alias.type = &builtin_type_invalid;
+			}
+		}
+		type = (struct type *)type->alias.type;
+	}
+	return type;
+}
+
+const struct type *
+strip_error(const struct type *type)
+{
+	while (type->storage == STORAGE_ERROR) {
+		type = type->error;
+	}
+	return type;
+}
+
+// checks if a type is `done`, or an alias thereof, without erroring out when a
+// "circular dependency" is encountered (since that means the type isn't `done`)
+bool
+type_is_done(struct context *ctx, const struct type *type)
+{
+	while (type->storage == STORAGE_ALIAS) {
+		if (type->alias.type == NULL) {
 			complete_alias(ctx, (struct type *)type);
+			if (type->alias.type == NULL) {
+				return false;
+			}
 		}
 		type = type->alias.type;
 	}
-	return type;
+	return type->storage == STORAGE_DONE;
 }
 
 const struct struct_field *
 type_get_field(struct context *ctx, const struct type *type, const char *name)
 {
-	if (type->storage == STORAGE_ERROR) {
+	if (type->storage == STORAGE_INVALID) {
 		return NULL;
 	}
 	assert(type->storage == STORAGE_STRUCT
 			|| type->storage == STORAGE_UNION);
+	assert(strcmp(name, "_") != 0);
 	struct struct_field *field = type->struct_union.fields;
 	while (field) {
 		if (field->name) {
@@ -110,20 +146,30 @@ type_get_value(const struct type *type, uint64_t index)
 	return NULL;
 }
 
+bool
+type_is_error(struct context *ctx, const struct type *type)
+{
+	while (type->storage == STORAGE_ALIAS) {
+		// Complete the alias
+		type_dealias(ctx, type);
+		type = type->alias.type;
+	}
+	return type->storage == STORAGE_ERROR || type->storage == STORAGE_NOMEM;
+}
+
 // Returns true if this type is or contains an error type
 bool
 type_has_error(struct context *ctx, const struct type *type)
 {
-	if (type->flags & TYPE_ERROR) {
+	if (type_is_error(ctx, type)) {
 		return true;
 	}
 	type = type_dealias(ctx, type);
 	if (type->storage != STORAGE_TAGGED) {
 		return false;
 	}
-	const struct type_tagged_union *tu = &type->tagged;
-	for (; tu; tu = tu->next) {
-		if (tu->type->flags & TYPE_ERROR) {
+	for (size_t i = 0; i < type->tagged.len; i++) {
+		if (type_is_error(ctx, type->tagged.types[i])) {
 			return true;
 		}
 	}
@@ -142,14 +188,16 @@ type_storage_unparse(enum type_storage storage)
 		return "bool";
 	case STORAGE_ENUM:
 		return "enum";
+	case STORAGE_ERROR:
+		return "error";
 	case STORAGE_F32:
 		return "f32";
 	case STORAGE_F64:
 		return "f64";
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 		return "invalid";
 	case STORAGE_FCONST:
-		return "fconst";
+		return "flexible float";
 	case STORAGE_FUNCTION:
 		return "function";
 	case STORAGE_I16:
@@ -161,11 +209,13 @@ type_storage_unparse(enum type_storage storage)
 	case STORAGE_I8:
 		return "i8";
 	case STORAGE_ICONST:
-		return "iconst";
+		return "flexible integer";
 	case STORAGE_INT:
 		return "int";
 	case STORAGE_NEVER:
 		return "never";
+	case STORAGE_NOMEM:
+		return "nomem";
 	case STORAGE_NULL:
 		return "null";
 	case STORAGE_OPAQUE:
@@ -173,7 +223,7 @@ type_storage_unparse(enum type_storage storage)
 	case STORAGE_POINTER:
 		return "pointer";
 	case STORAGE_RCONST:
-		return "rconst";
+		return "flexible rune";
 	case STORAGE_RUNE:
 		return "rune";
 	case STORAGE_SIZE:
@@ -202,6 +252,8 @@ type_storage_unparse(enum type_storage storage)
 		return "uintptr";
 	case STORAGE_UNION:
 		return "union";
+	case STORAGE_UNDEFINED:
+		return "undefined";
 	case STORAGE_VALIST:
 		return "valist";
 	case STORAGE_VOID:
@@ -221,6 +273,7 @@ type_is_integer(struct context *ctx, const struct type *type)
 	case STORAGE_ARRAY:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_POINTER:
 	case STORAGE_SLICE:
@@ -237,9 +290,10 @@ type_is_integer(struct context *ctx, const struct type *type)
 	case STORAGE_F64:
 	case STORAGE_FCONST:
 	case STORAGE_VALIST:
+	case STORAGE_UNDEFINED:
 		return false;
 	case STORAGE_ENUM:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_I8:
 	case STORAGE_I16:
 	case STORAGE_I32:
@@ -255,6 +309,7 @@ type_is_integer(struct context *ctx, const struct type *type)
 	case STORAGE_UINTPTR:
 		return true;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		return type_is_integer(ctx, type_dealias(ctx, type));
 	}
 	assert(0); // Unreachable
@@ -269,6 +324,7 @@ type_is_numeric(struct context *ctx, const struct type *type)
 	case STORAGE_ARRAY:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_POINTER:
 	case STORAGE_SLICE:
@@ -282,8 +338,9 @@ type_is_numeric(struct context *ctx, const struct type *type)
 	case STORAGE_RUNE:
 	case STORAGE_NULL:
 	case STORAGE_VALIST:
+	case STORAGE_UNDEFINED:
 		return false;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_ENUM:
 	case STORAGE_I8:
 	case STORAGE_I16:
@@ -303,6 +360,7 @@ type_is_numeric(struct context *ctx, const struct type *type)
 	case STORAGE_UINTPTR:
 		return true;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		return type_is_numeric(ctx, type_dealias(ctx, type));
 	}
 	assert(0); // Unreachable
@@ -314,7 +372,7 @@ type_is_float(struct context *ctx, const struct type *type)
 	type = type_dealias(ctx, type);
 	return type->storage == STORAGE_F32 || type->storage == STORAGE_F64
 		|| type->storage == STORAGE_FCONST
-		|| type->storage == STORAGE_ERROR;
+		|| type->storage == STORAGE_INVALID;
 }
 
 bool
@@ -329,9 +387,10 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_DONE:
 	case STORAGE_ARRAY:
 	case STORAGE_ENUM:
-	case STORAGE_ERROR: // XXX?
+	case STORAGE_INVALID: // XXX?
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_POINTER:
 	case STORAGE_SLICE:
@@ -339,7 +398,6 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_STRUCT:
 	case STORAGE_TAGGED:
 	case STORAGE_TUPLE:
-	case STORAGE_UNION:
 	case STORAGE_BOOL:
 	case STORAGE_RCONST:
 	case STORAGE_RUNE:
@@ -351,6 +409,8 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_U64:
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
+	case STORAGE_UNION:
+	case STORAGE_UNDEFINED:
 	case STORAGE_VALIST:
 		return false;
 	case STORAGE_I8:
@@ -365,6 +425,7 @@ type_is_signed(struct context *ctx, const struct type *type)
 	case STORAGE_ICONST:
 		return type->flexible.min < 0;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		assert(0); // Handled above
 	}
 	assert(0); // Unreachable
@@ -383,10 +444,9 @@ type_hash(const struct type *type)
 {
 	uint32_t hash = FNV1A_INIT;
 	hash = fnv1a(hash, type->storage);
-	hash = fnv1a(hash, type->flags);
 	switch (type->storage) {
 	case STORAGE_BOOL:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_I8:
@@ -395,6 +455,7 @@ type_hash(const struct type *type)
 	case STORAGE_I64:
 	case STORAGE_INT:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
@@ -405,6 +466,7 @@ type_hash(const struct type *type)
 	case STORAGE_U64:
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
+	case STORAGE_UNDEFINED:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
 	case STORAGE_DONE:
@@ -414,11 +476,10 @@ type_hash(const struct type *type)
 		hash = fnv1a(hash, type->alias.type->storage);
 		/* fallthrough */
 	case STORAGE_ALIAS:
-		for (const struct identifier *ident = &type->alias.ident; ident;
-				ident = ident->ns) {
-			hash = fnv1a_s(hash, ident->name);
-			hash = fnv1a(hash, 0);
-		}
+		hash = ident_hash(hash, type->alias.ident);
+		break;
+	case STORAGE_ERROR:
+		hash = fnv1a_u32(hash, type_hash(type->error));
 		break;
 	case STORAGE_ARRAY:
 		hash = fnv1a_u32(hash, type_hash(type->array.members));
@@ -443,7 +504,7 @@ type_hash(const struct type *type)
 		hash = fnv1a(hash, type->flexible.id);
 		break;
 	case STORAGE_POINTER:
-		hash = fnv1a(hash, type->pointer.flags);
+		hash = fnv1a(hash, (unsigned char) type->pointer.nullable);
 		hash = fnv1a_u32(hash, type_hash(type->pointer.referent));
 		break;
 	case STORAGE_SLICE:
@@ -451,6 +512,7 @@ type_hash(const struct type *type)
 		break;
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
+		hash = fnv1a_size(hash, type->size);
 		for (const struct struct_field *field = type->struct_union.fields;
 				field; field = field->next) {
 			if (field->name) {
@@ -463,9 +525,8 @@ type_hash(const struct type *type)
 	case STORAGE_TAGGED:
 		// Invariant: subtypes must be sorted by ID and must not include
 		// any other tagged union types, nor any duplicates.
-		for (const struct type_tagged_union *tu = &type->tagged;
-				tu; tu = tu->next) {
-			hash = fnv1a_u32(hash, type_hash(tu->type));
+		for (size_t i = 0; i < type->tagged.len; i++) {
+			hash = fnv1a_u32(hash, type_hash(type->tagged.types[i]));
 		}
 		break;
 	case STORAGE_TUPLE:
@@ -478,35 +539,161 @@ type_hash(const struct type *type)
 	return hash;
 }
 
-// Note that the type this returns is NOT a type singleton and cannot be treated
-// as such.
-static const struct type *
-strip_flags(const struct type *t, struct type *secondary)
+bool
+type_equal(const struct type *a, const struct type *b)
 {
-	if (!t->flags) {
-		return t;
+	if (a->storage != b->storage) {
+		return false;
 	}
-	*secondary = *t;
-	secondary->flags = 0;
-	secondary->id = type_hash(secondary);
-	return secondary;
+
+	switch (a->storage) {
+	case STORAGE_BOOL:
+	case STORAGE_DONE:
+	case STORAGE_F32:
+	case STORAGE_F64:
+	case STORAGE_I16:
+	case STORAGE_I32:
+	case STORAGE_I64:
+	case STORAGE_I8:
+	case STORAGE_INT:
+	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
+	case STORAGE_NULL:
+	case STORAGE_OPAQUE:
+	case STORAGE_RUNE:
+	case STORAGE_SIZE:
+	case STORAGE_STRING:
+	case STORAGE_U16:
+	case STORAGE_U32:
+	case STORAGE_U64:
+	case STORAGE_U8:
+	case STORAGE_UINT:
+	case STORAGE_UINTPTR:
+	case STORAGE_UNDEFINED:
+	case STORAGE_VOID:
+	case STORAGE_INVALID:
+	case STORAGE_VALIST:
+		return true;
+	case STORAGE_ALIAS:
+	case STORAGE_ENUM:
+		return ident_equal(a->alias.ident, b->alias.ident);
+	case STORAGE_ERROR:
+		return type_equal(a->error, b->error);
+	case STORAGE_ARRAY:
+	case STORAGE_SLICE:
+		return a->array.length == b->array.length
+			&& a->array.expandable == b->array.expandable
+			&& type_equal(a->array.members, b->array.members);
+	case STORAGE_FUNCTION:
+		if (!type_equal(a->func.result, b->func.result)) {
+			return false;
+		}
+		if (a->func.variadism != b->func.variadism) {
+			return false;
+		}
+		const struct type_func_param *param_a = a->func.params;
+		const struct type_func_param *param_b = b->func.params;
+		while (param_a && param_b) {
+			if (!type_equal(param_a->type, param_b->type)) {
+				return false;
+			}
+			if (param_a->default_value || param_b->default_value) {
+				if (!param_a->default_value
+						|| !param_b->default_value) {
+					return false;
+				}
+				if (!expr_equal(param_a->default_value,
+						param_b->default_value)) {
+					return false;
+				}
+			}
+			param_a = param_a->next;
+			param_b = param_b->next;
+		}
+		return !param_a && !param_b;
+	case STORAGE_POINTER:
+		return a->pointer.nullable == b->pointer.nullable
+			&& type_equal(a->pointer.referent, b->pointer.referent);
+	case STORAGE_STRUCT:
+	case STORAGE_UNION:
+		if (a->size != b->size) {
+			return false;
+		}
+		const struct struct_field *field_a = a->struct_union.fields;
+		const struct struct_field *field_b = b->struct_union.fields;
+		while (field_a && field_b) {
+			if (field_a->name || field_b->name) {
+				if (!field_a->name || !field_b->name) {
+					return false;
+				}
+				if (strcmp(field_a->name, field_b->name)) {
+					return false;
+				}
+			}
+			if (!type_equal(field_a->type, field_b->type)) {
+				return false;
+			}
+			if (field_a->offset != field_b->offset) {
+				return false;
+			}
+			field_a = field_a->next;
+			field_b = field_b->next;
+		}
+		return !field_a && !field_b;
+	case STORAGE_TAGGED:
+		if (a->tagged.len != b->tagged.len) {
+			return false;
+		}
+		for (size_t i = 0; i < a->tagged.len; i++) {
+			if (!type_equal(a->tagged.types[i], b->tagged.types[i])) {
+				return false;
+			}
+		}
+		return true;
+	case STORAGE_TUPLE:;
+		const struct type_tuple *tuple_a = &a->tuple;
+		const struct type_tuple *tuple_b = &b->tuple;
+		while (tuple_a && tuple_b) {
+			if (!type_equal(tuple_a->type, tuple_b->type)) {
+				return false;
+			}
+			tuple_a = tuple_a->next;
+			tuple_b = tuple_b->next;
+		}
+		return !tuple_a && !tuple_b;
+	case STORAGE_FCONST:
+	case STORAGE_ICONST:
+	case STORAGE_RCONST:
+		return a == b;
+	}
+	assert(0); // Unreachable
+}
+
+void
+tagged_append(struct type_tagged_union *tagged, const struct type *memb)
+{
+	if (tagged->len == tagged->cap) {
+		tagged->cap++;
+		tagged->cap *= 2;
+		tagged->types = xrealloc(tagged->types,
+			tagged->cap * sizeof(struct type *));
+	}
+	assert(tagged->len < tagged->cap);
+	tagged->types[tagged->len] = memb;
+	tagged->len++;
 }
 
 // Duplicate and return the tags of a tagged union
-struct type_tagged_union *
+struct type_tagged_union
 tagged_dup_tags(const struct type_tagged_union *tags)
 {
-	struct type_tagged_union *ret = xcalloc(1, sizeof(struct type_tagged_union));
-	struct type_tagged_union *cur_ret = ret;
-
-	for (const struct type_tagged_union *tu = tags; tu; tu = tu->next) {
-		if (cur_ret->type != NULL) {
-			cur_ret->next = xcalloc(1, sizeof(struct type_tagged_union));
-			cur_ret = cur_ret->next;
-		}
-		cur_ret->type = tu->type;
-	}
-	return ret;
+	const struct type **types = xcalloc(tags->len, sizeof(struct type *));
+	memcpy(types, tags->types, tags->len * sizeof(struct type *));
+	return (struct type_tagged_union){
+		.types = types,
+		.len = tags->len,
+		.cap = tags->len,
+	};
 }
 
 const struct type *
@@ -516,34 +703,28 @@ tagged_select_subtype(struct context *ctx, const struct type *tagged,
 	tagged = type_dealias(ctx, tagged);
 	assert(tagged->storage == STORAGE_TAGGED);
 
-	struct type _stripped;
-	const struct type *stripped = strip_flags(subtype, &_stripped);
+	const struct type *stripped = strip_error(subtype);
 
 	size_t nassign = 0;
 	const struct type *selected = NULL;
-	for (const struct type_tagged_union *tu = &tagged->tagged;
-			tu; tu = tu->next) {
-		if (tu->type->id == subtype->id) {
-			return tu->type;
+	for (size_t i = 0; i < tagged->tagged.len; i++) {
+		const struct type *t = tagged->tagged.types[i];
+		if (t->id == subtype->id) {
+			return t;
 		}
 
-		if (type_dealias(ctx, tu->type)->storage == STORAGE_VOID) {
-			continue;
-		}
-		if (type_is_assignable(ctx, tu->type, subtype)) {
-			selected = tu->type;
+		if (type_is_assignable(ctx, t, subtype)) {
+			selected = t;
 			++nassign;
 		}
 	}
 
 	if (strip) {
-		for (const struct type_tagged_union *tu = &tagged->tagged;
-				tu; tu = tu->next) {
-			struct type _tustripped;
+		for (size_t i = 0; i < tagged->tagged.len; i++) {
 			const struct type *tustripped =
-				strip_flags(tu->type, &_tustripped);
+				strip_error(tagged->tagged.types[i]);
 			if (tustripped->id == stripped->id) {
-				return tu->type;
+				return tagged->tagged.types[i];
 			}
 		}
 	}
@@ -703,9 +884,10 @@ promote_flexible(struct context *ctx,
 	assert(!type_is_flexible(a) && type_is_flexible(b));
 	if (type_dealias(ctx, a)->storage == STORAGE_TAGGED) {
 		const struct type *tag = NULL;
-		for (const struct type_tagged_union *tu =
-				&type_dealias(ctx, a)->tagged; tu; tu = tu->next) {
-			const struct type *p = promote_flexible(ctx, tu->type, b);
+		struct type_tagged_union tagged = type_dealias(ctx, a)->tagged;
+		for (size_t i = 0; i < tagged.len; i++) {
+			const struct type *p =
+				promote_flexible(ctx, tagged.types[i], b);
 			if (!p) {
 				lower_flexible(ctx, b, tag);
 				continue;
@@ -768,20 +950,22 @@ tagged_subset_compat(struct context *ctx, const struct type *superset, const str
 	if (superset->storage != STORAGE_TAGGED || subset->storage != STORAGE_TAGGED) {
 		return false;
 	}
-	const struct type_tagged_union *superset_tu = &superset->tagged,
-		*subset_tu = &subset->tagged;
-	while (subset_tu && superset_tu) {
-		while (superset_tu) {
-			if (superset_tu->type->id == subset_tu->type->id) {
-				subset_tu = subset_tu->next;
-				superset_tu = superset_tu->next;
+	size_t sub_i = 0, super_i = 0;
+	while (sub_i < subset->tagged.len && super_i < superset->tagged.len) {
+		while (super_i < superset->tagged.len) {
+			const struct type *sub_memb = subset->tagged.types[sub_i];
+			const struct type *super_memb = superset->tagged.types[super_i];
+			// XXX: Why do we use the ID here?
+			if (sub_memb->id == super_memb->id) {
+				sub_i++;
+				super_i++;
 				break;
 			}
-			superset_tu = superset_tu->next;
+			super_i++;
 		}
 	}
 
-	return !subset_tu;
+	return sub_i >= subset->tagged.len;
 }
 
 static bool
@@ -809,14 +993,16 @@ type_is_assignable(struct context *ctx,
 		from = type_dealias(ctx, from);
 	}
 
-	// const and non-const types are mutually assignable
-	struct type _to, _from;
-	to = strip_flags(to, &_to), from = strip_flags(from, &_from);
-	if (to->id == from->id && to->storage != STORAGE_VOID) {
+	// error and non-error types are mutually assignable
+	to = strip_error(to);
+	from = strip_error(from);
+	if (to == from && to->storage != STORAGE_VOID) {
 		return true;
 	}
 
-	if (from->storage == STORAGE_ERROR || from->storage == STORAGE_NEVER) {
+	if (from->storage == STORAGE_INVALID
+			|| from->storage == STORAGE_NEVER
+			|| from->storage == STORAGE_UNDEFINED) {
 		return true;
 	}
 
@@ -824,7 +1010,6 @@ type_is_assignable(struct context *ctx,
 		return promote_flexible(ctx, to_orig, from_orig);
 	}
 
-	struct type _to_secondary, _from_secondary;
 	const struct type *to_secondary, *from_secondary;
 	switch (to->storage) {
 	case STORAGE_FCONST:
@@ -852,13 +1037,13 @@ type_is_assignable(struct context *ctx,
 		return type_is_float(ctx, from);
 	case STORAGE_POINTER:
 		to_secondary = to->pointer.referent;
-		to_secondary = strip_flags(to_secondary, &_to_secondary);
+		to_secondary = strip_error(to_secondary);
 		switch (from->storage) {
 		case STORAGE_NULL:
-			return to->pointer.flags & PTR_NULLABLE;
+			return to->pointer.nullable;
 		case STORAGE_POINTER:
 			from_secondary = from->pointer.referent;
-			from_secondary = strip_flags(from_secondary, &_from_secondary);
+			from_secondary = strip_error(from_secondary);
 			if (struct_subtype(ctx, to_secondary, from_secondary)) {
 				return true;
 			}
@@ -871,13 +1056,13 @@ type_is_assignable(struct context *ctx,
 				}
 				break;
 			default:
-				if (to_secondary->id != from_secondary->id) {
+				if (to_secondary != from_secondary) {
 					return false;
 				}
 				break;
 			}
-			if (from->pointer.flags & PTR_NULLABLE) {
-				return to->pointer.flags & PTR_NULLABLE;
+			if (from->pointer.nullable) {
+				return to->pointer.nullable;
 			}
 			return true;
 		default:
@@ -888,8 +1073,8 @@ type_is_assignable(struct context *ctx,
 		assert(to->alias.type);
 		return type_is_assignable(ctx, to->alias.type, from);
 	case STORAGE_VOID:
-		return to_orig->id == from_orig->id &&
-			(from_orig->flags & TYPE_ERROR)	== (to_orig->flags & TYPE_ERROR);
+		return to == from &&
+			type_is_error(ctx, from_orig) == type_is_error(ctx, to_orig);
 	case STORAGE_SLICE:
 		if (from->storage == STORAGE_POINTER) {
 			from = type_dealias(ctx, from->pointer.referent);
@@ -902,16 +1087,12 @@ type_is_assignable(struct context *ctx,
 				|| from->array.length == SIZE_UNDEFINED)) {
 			return false;
 		}
-		to_secondary = strip_flags(
-			to->array.members,
-			&_to_secondary);
-		from_secondary = strip_flags(
-			from->array.members,
-			&_from_secondary);
+		to_secondary = strip_error(to->array.members);
+		from_secondary = strip_error(from->array.members);
 		if (to_secondary->storage == STORAGE_OPAQUE) {
 			return true;
 		}
-		return to_secondary->id == from_secondary->id;
+		return to_secondary == from_secondary;
 	case STORAGE_ARRAY:
 		if (from->storage != STORAGE_ARRAY) {
 			return false;
@@ -935,6 +1116,7 @@ type_is_assignable(struct context *ctx,
 	case STORAGE_F32:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
@@ -945,8 +1127,11 @@ type_is_assignable(struct context *ctx,
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 		return false;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
+	case STORAGE_UNDEFINED:
 		return true;
+	case STORAGE_ERROR:
+		assert(0); // Handled above
 	}
 
 	assert(0); // Unreachable
@@ -980,12 +1165,9 @@ is_castable_with_tagged(struct context *ctx,
 const struct type *
 type_is_castable(struct context *ctx, const struct type *to, const struct type *from)
 {
-	if (to->storage == STORAGE_VOID) {
-		if (type_is_flexible(from)) {
-			lower_flexible(ctx, from, NULL);
-		}
+	if (to->storage == STORAGE_INVALID) {
 		return to;
-	} else if (to->storage == STORAGE_ERROR) {
+	} else if (to->storage == STORAGE_UNDEFINED) {
 		return to;
 	}
 
@@ -1000,9 +1182,10 @@ type_is_castable(struct context *ctx, const struct type *to, const struct type *
 		return to_orig;
 	}
 
-	struct type _to, _from;
-	to = strip_flags(to, &_to), from = strip_flags(from, &_from);
-	if (to->id == from->id) {
+	to = strip_error(to);
+	from = strip_error(from);
+
+	if (to == from) {
 		return to_orig;
 	}
 
@@ -1090,17 +1273,20 @@ type_is_castable(struct context *ctx, const struct type *to, const struct type *
 	case STORAGE_BOOL:
 	case STORAGE_VOID:
 	case STORAGE_DONE:
+	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_FUNCTION:
 	case STORAGE_TUPLE:
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
-	case STORAGE_NEVER:
 		return NULL;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_TAGGED:
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
+	case STORAGE_UNDEFINED:
 		assert(0); // Handled above
 	}
 
@@ -1111,12 +1297,15 @@ void
 builtin_types_init(const char *target)
 {
 	if (strcmp(target, "aarch64") == 0) {
+		builtin_type_f64.align = 8;
 		builtin_type_int.size = 4;
 		builtin_type_int.align = 4;
 		builtin_type_uint.size = 4;
 		builtin_type_uint.align = 4;
 		builtin_type_uintptr.size = 8;
 		builtin_type_uintptr.align = 8;
+		builtin_type_i64.align = 8;
+		builtin_type_u64.align = 8;
 		builtin_type_null.size = 8;
 		builtin_type_null.align = 8;
 		builtin_type_size.size = 8;
@@ -1126,12 +1315,15 @@ builtin_types_init(const char *target)
 		builtin_type_valist.size = 32;
 		builtin_type_valist.align = 8;
 	} else if (strcmp(target, "riscv64") == 0) {
+		builtin_type_f64.align = 8;
 		builtin_type_int.size = 4;
 		builtin_type_int.align = 4;
 		builtin_type_uint.size = 4;
 		builtin_type_uint.align = 4;
 		builtin_type_uintptr.size = 8;
 		builtin_type_uintptr.align = 8;
+		builtin_type_i64.align = 8;
+		builtin_type_u64.align = 8;
 		builtin_type_null.size = 8;
 		builtin_type_null.align = 8;
 		builtin_type_size.size = 8;
@@ -1141,12 +1333,15 @@ builtin_types_init(const char *target)
 		builtin_type_valist.size = 8;
 		builtin_type_valist.align = 8;
 	} else if (strcmp(target, "x86_64") == 0) {
+		builtin_type_f64.align = 8;
 		builtin_type_int.size = 4;
 		builtin_type_int.align = 4;
 		builtin_type_uint.size = 4;
 		builtin_type_uint.align = 4;
 		builtin_type_uintptr.size = 8;
 		builtin_type_uintptr.align = 8;
+		builtin_type_i64.align = 8;
+		builtin_type_u64.align = 8;
 		builtin_type_null.size = 8;
 		builtin_type_null.align = 8;
 		builtin_type_size.size = 8;
@@ -1156,18 +1351,18 @@ builtin_types_init(const char *target)
 		builtin_type_valist.size = 24;
 		builtin_type_valist.align = 8;
 	} else {
-		xfprintf(stderr, "Unsupported or unrecognized target: %s", target);
+		xfprintf(stderr, "Unsupported or unrecognized target: %s\n", target);
 		exit(EXIT_USER);
 	}
 	struct type *builtins[] = {
-		&builtin_type_bool, &builtin_type_error, &builtin_type_f32,
+		&builtin_type_bool, &builtin_type_invalid, &builtin_type_f32,
 		&builtin_type_f64, &builtin_type_i8, &builtin_type_i16,
 		&builtin_type_i32, &builtin_type_i64, &builtin_type_int,
 		&builtin_type_u8, &builtin_type_u16, &builtin_type_u32,
 		&builtin_type_u64, &builtin_type_uint, &builtin_type_uintptr,
 		&builtin_type_null, &builtin_type_rune, &builtin_type_size,
-		&builtin_type_void, &builtin_type_done, &builtin_type_str,
-		&builtin_type_valist,
+		&builtin_type_void, &builtin_type_done, &builtin_type_nomem,
+		&builtin_type_str, &builtin_type_valist,
 	};
 	for (size_t i = 0; i < sizeof(builtins) / sizeof(builtins[0]); ++i) {
 		builtins[i]->id = type_hash(builtins[i]);
@@ -1180,8 +1375,8 @@ struct type builtin_type_bool = {
 	.size = 1,
 	.align = 1,
 },
-builtin_type_error = {
-	.storage = STORAGE_ERROR,
+builtin_type_invalid = {
+	.storage = STORAGE_INVALID,
 	.size = 0,
 	.align = 0,
 },
@@ -1193,7 +1388,6 @@ builtin_type_f32 = {
 builtin_type_f64 = {
 	.storage = STORAGE_F64,
 	.size = 8,
-	.align = 8,
 },
 builtin_type_i8 = {
 	.storage = STORAGE_I8,
@@ -1213,7 +1407,6 @@ builtin_type_i32 = {
 builtin_type_i64 = {
 	.storage = STORAGE_I64,
 	.size = 8,
-	.align = 8,
 },
 builtin_type_int = {
 	.storage = STORAGE_INT,
@@ -1222,6 +1415,11 @@ builtin_type_never = {
 	.storage = STORAGE_NEVER,
 	.size = SIZE_UNDEFINED,
 	.align = ALIGN_UNDEFINED,
+},
+builtin_type_nomem = {
+	.storage = STORAGE_NOMEM,
+	.size = 0,
+	.align = 0,
 },
 builtin_type_opaque = {
 	.storage = STORAGE_OPAQUE,
@@ -1246,7 +1444,6 @@ builtin_type_u32 = {
 builtin_type_u64 = {
 	.storage = STORAGE_U64,
 	.size = 8,
-	.align = 8,
 },
 builtin_type_uint = {
 	.storage = STORAGE_UINT,
@@ -1280,4 +1477,9 @@ builtin_type_str = {
 },
 builtin_type_valist = {
 	.storage = STORAGE_VALIST,
+},
+builtin_type_undefined = {
+	.storage = STORAGE_UNDEFINED,
+	.align = ALIGN_UNDEFINED,
+	.size = SIZE_UNDEFINED,
 };

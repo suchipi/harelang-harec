@@ -1,13 +1,13 @@
 use rt::{compile, status};
 
-def size_tag = 2206074632;
-def f32_tag = 1568378015;
-def int_tag = 1099590421;
-def void_tag = 3012680272;
-def u8_tag = 3181589295;
-def u16_tag = 3481467866;
-def u32_tag = 1906196061;
-def u64_tag = 1268499444;
+def size_tag = 185362065;
+def f32_tag = 118251589;
+def int_tag = 218917303;
+def void_tag = 302805398;
+def u8_tag = 369915874;
+def u16_tag = 353138255;
+def u32_tag = 336360636;
+def u64_tag = 386693493;
 
 fn measurements() void = {
 	const x: (u8 | u16 | u32 | u64) = 1337u16;	// With padding
@@ -26,14 +26,15 @@ fn measurements() void = {
 
 fn storage() void = {
 	let x: (u8 | u16 | u32 | u64) = 42u8;
+	static assert(align(u32) == 4 && align(u64) == 8); // XXX
 	const y = &x: *struct {
 		tag: u32,
-		@offset(4) union {
+		union {
 			_u8: u8,
 			_u16: u16,
 			_u32: u32,
 		},
-		@offset(8) _u64: u64,
+		_u64: u64,
 	};
 	assert(offset(y._u8) == 4);
 	assert(offset(y._u16) == 4);
@@ -90,18 +91,24 @@ fn reduction() void = {
 		};"
 	)!;
 	assert(a is i8 && b is i8 && c is i8 && d is i8);
-	assert(size((i8 | i16 | i32)) == size((i8 | (i16 | i32))));
+	assert(size((i8 | i16 | i32)) == size((i8 | ...(i16 | i32))));
 	assert(size(integer) == size(signed));
 	assert(size(integer) != size((signed | unsigned)));
 	const i: integer = 10i;
 	assert(i is int);
 };
 
+type err = void;
+
 fn casts() void = {
 	let a: (u8 | u16) = 42u16;
 	assert(a as u16 == 42);
 	let x = a: u8;
 	assert(x == 42);
+
+	let b: (void | !err) = err;
+	assert(b is err);
+	assert(b is !err);
 
 	const val = 0xBEEFu16;
 	const is_little = (&val: *[2]u8)[0] == 0xEF;
@@ -159,8 +166,8 @@ fn subsetcast() void = {
 	let y: (size | int | void) = x;
 	let p = &y: *struct {
 		tag: u32,
-		@offset(4) i: int,
-		@offset(8) z: size,
+		i: i32,
+		z: size,
 	};
 	assert(p.tag == size_tag);
 	assert(p.z == 1337z);
@@ -176,8 +183,8 @@ fn subsetcast() void = {
 	let y: (size | int | void) = x;
 	let p = &y: *struct {
 		tag: u32,
-		@offset(4) i: int,
-		@offset(8) z: size,
+		i: i32,
+		z: size,
 	};
 	assert(p.tag == int_tag);
 	assert(p.i == 1337);

@@ -11,11 +11,11 @@
 enum lexical_token {
 	T_ATTR_FINI,
 	T_ATTR_INIT,
-	T_ATTR_OFFSET,
 	T_ATTR_PACKED,
 	T_ATTR_SYMBOL,
 	T_ATTR_TEST,
 	T_ATTR_THREADLOCAL,
+	T_ATTR_UNDEFINED,
 	T_UNDERSCORE,
 	T_ABORT,
 	T_ALIGN,
@@ -53,6 +53,7 @@ enum lexical_token {
 	T_LET,
 	T_MATCH,
 	T_NEVER,
+	T_NOMEM,
 	T_NULL,
 	T_NULLABLE,
 	T_OFFSET,
@@ -154,14 +155,14 @@ struct token {
 	enum lexical_token token;
 	enum type_storage storage;
 	union {
-		char *name;
+		const char *name;
 		uint32_t rune;
 		int64_t ival;
 		uint64_t uval;
 		double fval;
 		struct {
 			size_t len;
-			char *value;
+			const char *value;
 		} string;
 	};
 };
@@ -174,14 +175,15 @@ struct lexer {
 	struct token un;
 	struct location loc;
 	bool require_int;
+	bool in_annotation;
+	struct intern_table *itbl;
 };
 
-void lex_init(struct lexer *lexer, FILE *f, int fileid);
+void lex_init(struct lexer *lexer, FILE *f, int fileid, struct intern_table *itbl);
 void lex_finish(struct lexer *lexer);
 enum lexical_token lex(struct lexer *lexer, struct token *out);
 void unlex(struct lexer *lexer, const struct token *in);
 
-void token_finish(struct token *tok);
 const char *token_str(const struct token *tok);
 const char *lexical_token_str(enum lexical_token tok);
 

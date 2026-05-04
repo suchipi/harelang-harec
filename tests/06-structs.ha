@@ -1,4 +1,5 @@
 use rt::{compile, status};
+use testmod;
 
 fn padding() void = {
 	assert(size(struct { x: i32, y: i32 }) == 8);
@@ -7,6 +8,8 @@ fn padding() void = {
 	assert(align(struct { x: i32, y: i32 }) == 4);
 	assert(align(struct { x: i32, y: i64 }) == 8);
 	assert(align(union { x: i8, y: i16, z: i32 }) == 4);
+	assert(size(struct { x: i32, _: i32 }) == 8);
+	assert(size(union { x: i8, y: i16, _: i32 }) == 4);
 
 	const s = struct {
 		x: i8 = 10,
@@ -142,15 +145,31 @@ fn nested() void = {
 	s.y.a = struct { b: int = 1337, c: int = 7331 };
 	assert(s.y.a.b == 1337);
 	assert(s.y.a.c == 7331);
+
+	// ensure this gets through parse
+	compile(status::CHECK, "type z = struct { a, x: int };")!;
+	compile(status::CHECK, "type z = struct { a::b, x: int };")!;
+	compile(status::CHECK, "let z = s { a { x = y } };")!;
+	compile(status::CHECK, "let z = s { a::b { x = y } };")!;
 };
 
-type coords = struct { @offset(0) x: int, @offset(4) y: int };
+type coords = struct { x: int, y: int };
 
 type coords3 = struct { coords, z: int };
 type embed = struct { a: uint, b: u8 };
 type _enum = enum { A = -1, B, C };
 // complex embedded hierarchy
-type me = struct { embed, coords3, @offset(24) v: void, f: int, g: (int, str), h: _enum, p: nullable *int };
+type me = struct {
+	embed,
+	coords3,
+	_: [4]u8,
+	v: void,
+	f: int,
+	g: (int, str),
+	h: _enum,
+	p: nullable *int,
+};
+
 let g1: me = me {        b = 4, x = -1, y = -2, z = -3, f = 20, ... };
 let g2: me = me {               x = -1, y = -2, z = -3, f = 20, ... };
 let g3: me = me {                       y = -2, z = -3, f = 20, ... };
@@ -163,6 +182,15 @@ fn named() void = {
 	assert(x.x == 20 && x.y == 10);
 };
 
+type undef_test = struct {
+	x: int,
+	// Has no default value:
+	y: (int | void),
+};
+
+let undef = undef_test { @undefined... };
+let undef2 = undef_test { x = 10, @undefined... };
+
 type offset_test = struct {
 	a: int,
 	b: void,
@@ -171,6 +199,15 @@ type offset_test = struct {
 	e: size,
 	f: void,
 	g: [0]int,
+};
+
+type padding_test = struct {
+	testmod::padding_embed,
+	_: u32,
+	x: u32,
+	_: void,
+	_: u32,
+	y: u32,
 };
 
 fn _offset() void = {
@@ -196,6 +233,20 @@ fn _offset() void = {
 	assert(offset(x.f) == 24);
 	assert(offset(x.g) == 24);
 	assert(size(offset_test) == 24);
+
+	let x = padding_test { ... };
+	assert(offset(x.a) == 4);
+	assert(offset(x.a.b) == 0);
+	assert(offset(x.a.c) == 0);
+	assert(offset(x.x) == 16);
+	assert(offset(x.y) == 24);
+};
+
+type autofill_union = struct {
+	union {
+		i: int,
+		p: *int,
+	},
 };
 
 fn autofill() void = {
@@ -222,59 +273,65 @@ fn autofill() void = {
 	assert(l4.a == 0 && l4.b == 0 && l4.x == 0  && l4.y == 0  && l4.z == -3 && l4.f == 20 && l4.g.0 == 0 && l4.g.1 == "" && l4.h == _enum::B && l4.p == null);
 	assert(l5.a == 0 && l5.b == 0 && l5.x == 0  && l5.y == 0  && l5.z == 0  && l5.f == 20 && l5.g.0 == 0 && l5.g.1 == "" && l5.h == _enum::B && l5.p == null);
 	assert(l6.a == 0 && l6.b == 0 && l6.x == 0  && l6.y == 0  && l6.z == 0  && l6.f == 0  && l6.g.0 == 0 && l6.g.1 == "" && l6.h == _enum::B && l6.p == null);
+
+	let au = autofill_union { ... };
+	let au = autofill_union { i = 5, ... };
+	let au = autofill_union { i = 5 };
 };
 
 fn invariants() void = {
 	// embedding a non-alias type
 	compile(status::PARSE, "type t = struct { u8, x: int };")!;
 	compile(status::PARSE, "type t = struct { x: int, u8};")!;
+	compile(status::PARSE, "type t = union @packed { x: u32, y: str };")!;
 
 	const failures = [
 	// Assign field from non-assignable type:
 	"fn test() void = { let x: struct { y: int } = struct { y: int = 10u }; };",
 
-	"
-	type coords = struct { x: int, y: int };
-
-	fn test() void = {
-		let x = coords { x: int = 10u, y: int = 20u };
-	};
-	",
+	"type coords = struct { x: int, y: int };"
+	"fn test() void = { let x = coords { x: int = 10u, y: int = 20u }; };",
 
 	// multiple initializations for single field
 	"type s = struct { x: int }; fn test() s = s { x = 5, x = 7 };",
 
-	"type e = struct { x: int }, s = struct { y: int, e };"
+	"type e = struct { x: int }; type s = struct { y: int, e };"
 	"fn test() s = s { x = 5, x = 7 };",
 
-	"type e = struct { x: int }, s = struct { e, y: int};"
+	"type e = struct { x: int }; type s = struct { e, y: int};"
 	"fn test() s = s { x = 5, x = 7 };",
 
 	// embedding a nonexistent identifier
-	"type t = struct { a, x: int };"
-	"type t = struct { x: int, a };"
+	"type t = struct { a, x: int };",
+	"type t = struct { x: int, a };",
+
 	// embedding a non-struct alias
-	"type a = str; type t = struct { a, x: int };"
-	"type a = str; type t = struct { x: int, a };"
+	"type a = str; type t = struct { a, x: int };",
+	"type a = str; type t = struct { x: int, a };",
+
 	// embedding a non-type object
-	"let a: int = 6; type t = struct { a, x: int };"
-	"let a: int = 6; type t = struct { x: int, a };"
+	"let a: int = 6; type t = struct { a, x: int };",
+	"let a: int = 6; type t = struct { x: int, a };",
 
 	// Duplicate members
-	"type s = struct { a: int, a: int };"
+	"type s = struct { a: int, a: int };",
 	"type s = struct { struct { a: int }, a: int };",
 	"type s = struct { a: int, struct { a: int } };",
 	"type embed = struct { a: int }; type s = struct { embed, a: int };",
 	"type embed = struct { a: int }; type s = struct { a: int, embed };",
 	"type embed = struct { a: int }; type s = struct { embed, embed };",
+
 	// Dereference non-nullable pointer:
 	"fn test() void = { let x: nullable *struct { y: int } = null; x.y; };",
+
 	// Select field from non-struct object:
 	"fn test() void = { let x = 10; x.y; };",
+
 	// Unknown field:
 	"fn test() void = { let x: struct { y: int } = struct { y: int = 10 }; x.z; };",
 	// Untyped field for unnamed struct:
 	"fn test() void = { let x = struct { x = 10 }; };",
+
 	// Members of undefined size before last
 	"type s = struct { x: [*]int, a: str };",
 
@@ -315,16 +372,6 @@ fn invariants() void = {
 	"type foo = struct { x: int, y: bar };"
 	"type bar = enum { A = 1, B, C = -1 };"
 	"fn test() void = { let x = foo { x = 0, ... }; };",
-
-	// Invalid @offsets
-	"type foo = struct { @offset(4) x: int, @offset(0) y: int };",
-
-	"type foo = struct { x: u64, @offset(4) y: u32 };",
-
-	"type foo = union { x: u32, @offset(4) y: u32 };",
-
-	// @packed union
-	"type foo = union @packed { x: u32, y: str };",
 	];
 	for (let i = 0z; i < len(failures); i += 1) {
 		compile(status::CHECK, failures[i])!;
@@ -378,6 +425,114 @@ fn eval() void = {
 		a: u8 = 69,
 		b: u32 = 1337,
 	}.b == 1337);
+};
+
+type pid_t = int;
+type timer_t = *opaque;
+type clock_t = i64;
+type si_band_t = i64;
+
+type sigval = union {
+	sival_int: int,
+	sival_ptr: *opaque,
+};
+
+def SI_MAX_SIZE: size = 128;
+def __ADDR_BND_PKEY_PAD: size = 8;
+
+// This is a particularly difficult type to compute the correct field offsets:
+type siginfo = union {
+	struct {
+		si_signo: int,
+		si_errno: int,
+		si_code: int,
+
+		union {
+			// kill()
+			struct {
+				si_pid: pid_t,
+				si_uid: u32,
+			},
+
+			// POSIX.1b timers
+			struct {
+				si_tid: timer_t,
+				si_overrun: int,
+				_sigval: sigval, // @ signals
+				si_sys_private: int,
+			},
+
+			// POSIX.1b signals
+			struct {
+				_sig_pid: pid_t, // @kill
+				_sig_uid: u32, // @ kill
+				union {
+					si_value: sigval,
+					si_int: int,
+					si_ptr: *opaque,
+				}
+			},
+
+			// SIGCHLD
+			struct {
+				_chld_pid: pid_t, // @ kill
+				_chld_uid: u32, // @ kill
+				si_status: int,
+				si_utime: clock_t,
+				si_stime: clock_t,
+			},
+
+			// SIGILL, SIGFPE, SIGSEGV, SIGBUS, SIGTRAP, SIGEMT
+			struct {
+				si_addr: *opaque,
+
+				union {
+					// used when si_code=BUS_MCEERR_AR or
+					// used when si_code=BUS_MCEERR_AO
+					si_addr_lsb: i16,
+
+					struct {
+						_dummy_bnd: [__ADDR_BND_PKEY_PAD]u8,
+						si_lower: *opaque,
+						si_upper: *opaque,
+					},
+
+					struct {
+						_dummy_pkey: [__ADDR_BND_PKEY_PAD]u8,
+						si_pkey: u32,
+					},
+				},
+			},
+
+			// SIGPOLL
+			struct {
+				si_band: si_band_t,
+				si_fd: int,
+			},
+
+			// SIGSYS
+			struct {
+				si_call_addr: *opaque,
+				si_syscall: int,
+				si_arch: uint,
+			},
+		},
+	},
+	_si_pad: [SI_MAX_SIZE]u8,
+};
+
+fn rt_siginfo() void = {
+	let si = siginfo { ... };
+	assert(offset(si.si_signo) == 0);
+	assert(offset(si.si_errno) == 4);
+	assert(offset(si.si_code) == 12);
+	assert(offset(si.si_pid) == 16);
+	assert(offset(si.si_uid) == 20);
+};
+
+export type embedded_underscores = struct {
+	union { struct { _: u32 }, },
+	union { struct { _: u32 }, },
 };
 
 export fn main() void = {

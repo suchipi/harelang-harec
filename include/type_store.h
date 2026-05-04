@@ -13,6 +13,11 @@ struct type_bucket {
 
 struct context;
 
+struct dimensions {
+	size_t size;
+	size_t align;
+};
+
 typedef struct type_bucket *type_store[TYPE_STORE_BUCKETS];
 
 // Applies the type reduction algorithm to the given tagged union.
@@ -29,11 +34,8 @@ struct dimensions type_store_lookup_dimensions(
 
 const struct type *builtin_type_for_storage(enum type_storage storage);
 
-const struct type *type_store_lookup_with_flags(struct context *ctx,
-	const struct type *type, unsigned int flags);
-
 const struct type *type_store_lookup_pointer(struct context *ctx,
-	struct location loc, const struct type *referent, unsigned int ptrflags);
+	struct location loc, const struct type *referent, bool nullable);
 
 const struct type *type_store_lookup_array(struct context *ctx,
 	struct location loc, const struct type *members, size_t len,
@@ -42,12 +44,9 @@ const struct type *type_store_lookup_array(struct context *ctx,
 const struct type *type_store_lookup_slice(struct context *ctx,
 	struct location loc, const struct type *members);
 
-// Looks up a type alias, which may be incomplete. If the dimensions of the
-// type are known, provide them as a hint in the dims argument (which can be
-// NULL otherwise). This is used as a hint to skip adding padding to packed
-// struct types.
 const struct type *type_store_lookup_alias(struct context *ctx,
-	const struct type *secondary, const struct dimensions *dims);
+	struct ident *ident, struct ident *name,
+	const struct type *secondary, bool exported);
 
 const struct type *type_store_lookup_tagged(struct context *ctx,
 	struct location loc, struct type_tagged_union *tags);

@@ -35,9 +35,6 @@ let x = [1, 2, 3]: d: []int;
 static assert(true: e == true: e);
 static assert('a' == 'a');
 
-static assert(~0u8 == 0xffu8);
-static assert(-2u8 == 0xfeu8);
-
 fn control_never() void = {
 	let x = {
 		yield yield 0;
@@ -95,6 +92,10 @@ fn control_never2() (int | void) = {
 		yield return 0;
 	};
 };
+
+fn for_each1() (int | void) = for (true) void;
+fn for_each2() (int | void) = for (false) void;
+fn for_each3() (int | void) = for (false) void else void;
 
 export fn main() void = {
 	let t = thing {
@@ -163,7 +164,6 @@ export fn main() void = {
 		};
 		def A: a = a { b = 0 };"
 	)!;
-	compile(status::CHECK, "let a = &0;")!;
 	compile(status::CHECK, "def A: a = 1 % 1;")!;
 	compile(status::CHECK, "def A: b = void;")!;
 	static assert(true == true && true != false);
@@ -185,7 +185,8 @@ export fn main() void = {
 	compile(status::CHECK, "fn a() *opaque = alloc(void);")!;
 	compile(status::CHECK, "fn a() void = { static let b = x & struct { a: int = 0 }; };")!;
 	assert(0xffu8 + 1 >> 1 == 0);
-	compile(status::CHECK, "type a = *...b; type b = *...a;")!;
+	compile(status::CHECK, "type a = *(...a | void);")!;
+	compile(status::CHECK, "type a = (...a | void);")!;
 	compile(status::CHECK, "def A = len([1]: []str);")!;
 
 	control_never();
@@ -194,15 +195,15 @@ export fn main() void = {
 	// identifier exceeds maximum length
 	let buf: [1024]u8 = [0...];
 	let buf = buf[..0];
-	static append(buf, rt::toutf8("let a")...);
+	static append(buf, rt::toutf8("let a")...)!;
 	// IDENT_MAX (in identifier.h) is defined as 255
 	for (let i = 0z; i < 255 / 2; i += 1) {
-		static append(buf, rt::toutf8("::a")...);
+		static append(buf, rt::toutf8("::a")...)!;
 	};
 	const n = len(buf);
-	static append(buf, rt::toutf8(" = 0;")...);
+	static append(buf, rt::toutf8(" = 0;")...)!;
 	compile(status::SUCCESS, *(&buf: *str))!;
-	static insert(buf[n], rt::toutf8("::a")...);
+	static insert(buf[n], rt::toutf8("::a")...)!;
 	compile(status::PARSE, *(&buf: *str))!;
 	assert(size(packed) == packedsz);
 	assert(size(packed) == 9);
@@ -257,4 +258,18 @@ export fn main() void = {
 	assert((A[2] as []str)[0] == "a");
 
 	compile(status::CHECK, "type e = enum { A }; fn f() void = { e::A: bool; };")!;
+
+	let c: []u8 = alloc([]: []u8, 20)!;
+	free(c);
+
+	compile(status::CHECK, "let x: nullable *int = &(0: [*]int)[0];")!;
+
+	let x: struct @packed { a: u64, b: u8 } = @undefined;
+	let y: struct { a: u64, b: u8 } = @undefined;
+	let tx = (x, 0u8);
+	let ty = (y, 0u8);
+	assert(offset(tx.1) == 9);
+	assert(offset(ty.1) == 16);
+
+	compile(status::CHECK, "fn x() void = { match (void: (int | void)) { case int => yield null; case void => void; }; };")!;
 };

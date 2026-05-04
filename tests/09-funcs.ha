@@ -1,4 +1,3 @@
-use rt;
 use rt::{compile, exit, status};
 
 fn simple() int = return 69;
@@ -36,16 +35,21 @@ fn vaargs() void = {
 let x: int = 42;
 
 @init fn init() void = {
+	assert(x == 42);
 	x = 1337;
-	rt::exit_status = 42;
 };
 
 @init fn init() void = {
 	void; // Should be allowed to have the same name
 };
 
+fn initfini() void = {
+	assert(x == 1337);
+	x = 0;
+};
+
 @fini fn fini() void = {
-	rt::exit_status = 0;
+	assert(x == 0);
 };
 
 @fini fn fini() void = {
@@ -86,6 +90,9 @@ fn cvaargs() void = {
 fn reject() void = {
 	compile(status::PARSE, "fn f(x: int..., ...) void = void;")!;
 
+	compile(status::PARSE, "fn f(foo) void = void;")!;
+	compile(status::PARSE, "fn f(int) void = void;")!;
+
 	let failures: [_]str = [
 		// parameter of undefined size
 		"fn f(x: [*]int) void = void;",
@@ -100,17 +107,13 @@ fn reject() void = {
 		"@test fn test() void = 42 + \"foo\";"
 		"let x: int = 4;", // ensure there is at least one declaration
 
+
 		"fn f(x: int) void = void;"
 		"fn g(x: int) void = void;"
 		"fn test() void = { f + g; };",
 		"fn test() void = { test = test; };",
 
 		"fn f() void = { size(*never); };",
-
-		// non-prototype declarations with unnamed parameters
-		"fn f(int) void = void;",
-		"fn f(*int) void = void;",
-		"type t = void; fn f(t) void = void;",
 
 		// variadic call to a function that does not support that
 		"fn a(x: int) void = void; fn b() void = { a(5...); };",
@@ -179,6 +182,10 @@ fn zeroparamfunc(
 	i; i.0; i.1;
 	assert(j == 5);
 };
+
+fn unnamedarg(_: str, x: int) int = 2 * x;
+
+fn unnamedargs(_: str, _: int, x: int) int = 2 * x;
 
 fn zerosizeparams() void = {
 	zeroparamfunc(1, void, "2", [], 3.0, zerostruct { ... },
@@ -258,9 +265,11 @@ export fn main() void = {
 	pointers();
 	vaargs();
 	cvaargs();
+	assert(unnamedarg("unused", 5) == 10);
+	assert(unnamedargs("unused", 10, 5) == 10);
 	zerosizeparams();
-	assert(x == 1337);
 	reject();
 	optional_params();
+	initfini();
 	_never();
 };

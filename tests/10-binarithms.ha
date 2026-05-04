@@ -200,6 +200,40 @@ fn comparison() void = {
 	static assert(0 < -1u);
 };
 
+type stralias = str;
+
+fn strings() void = {
+	assert("" == "");
+	assert("\0" == "\0");
+	assert("" != "a");
+	assert("a" != "");
+	assert("a" == "a");
+	assert("a" != "b");
+	assert("ab" != "a");
+	assert("a" != "ab");
+	assert("aaaa" != "aaab");
+	assert("aaa\0a" != "aaa\0b");
+	assert("a": stralias == "a": stralias);
+	assert("a": stralias == "a");
+	assert("a" == "a": stralias);
+	assert("a": stralias != "b": stralias);
+
+	static assert("" == "");
+	static assert("\0" == "\0");
+	static assert("" != "a");
+	static assert("a" != "");
+	static assert("a" == "a");
+	static assert("a" != "b");
+	static assert("ab" != "a");
+	static assert("a" != "ab");
+	static assert("aaaa" != "aaab");
+	static assert("aaa\0a" != "aaa\0b");
+	static assert("a": stralias == "a": stralias);
+	static assert("a": stralias == "a");
+	static assert("a" == "a": stralias);
+	static assert("a": stralias != "b": stralias);
+};
+
 def FLOAT: f64 = 6.0 * 7.0;
 def I8: i8 = 127 * 2;
 def U8: u8 = 128 * 2;
@@ -235,6 +269,10 @@ fn reject() void = {
 	compile(status::CHECK, "let x = -2147483648i32 / -1;")!;
 	compile(status::CHECK, "let x = 1 % 0;")!;
 	compile(status::CHECK, "let x = -2147483648i32 % -1;")!;
+	compile(status::CHECK, "let x = \"aaa\" < \"bbb\";")!;
+	compile(status::CHECK, "let x = \"aaa\" > \"bbb\";")!;
+	compile(status::CHECK, "let x = \"aaa\" <= \"bbb\";")!;
+	compile(status::CHECK, "let x = \"aaa\" >= \"bbb\";")!;
 };
 
 export fn main() void = {
@@ -243,6 +281,7 @@ export fn main() void = {
 	sar_shr();
 	arithmetic();
 	comparison();
+	strings();
 	eval();
 	reject();
 };

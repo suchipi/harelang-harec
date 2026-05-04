@@ -51,6 +51,9 @@ fn assignment() void = {
 	let x = (void, void);
 	x.0 = x.1;
 	x.1 = void;
+
+	let (a, b) = (1, 2), (c, d) = (3, 4);
+	assert(a == 1 && b == 2 && c == 3 && d == 4);
 };
 
 fn func(in: (int, size)) (int, size) = (in.0 + 1, in.1 + 1);
@@ -152,6 +155,13 @@ fn unpacking() void = {
 	assert(a == 1 && b == 2 && d == 4);
 };
 
+fn _offset() void = {
+	const x = (0i32, void, 0i64);
+	static assert(offset(x.0) == 0);
+	static assert(offset(x.1) == 4);
+	static assert(offset(x.2) == align(i64));
+};
+
 // Regression tests for miscellaneous compiler bugs
 fn regression() void = {
 	let a: (((int | void), int) | void) = (void, 0);
@@ -159,6 +169,11 @@ fn regression() void = {
 	let x = (1, 0);
 	x = (2, x.0);
 	assert(x.0 == 2 && x.1 == 1);
+};
+
+fn trailing_comma() void = {
+	let x: (int, bool,) = (0, false,);
+	let (y, z,) = x;
 };
 
 fn reject() void = {
@@ -231,6 +246,10 @@ fn _never() void = {
 	{ let (y, z): (int, int) = (yield, 1); };
 };
 
+fn undefined() void = {
+	let x: (int, int) = (1337, @undefined);
+};
+
 export fn main() void = {
 	storage();
 	indexing();
@@ -239,7 +258,10 @@ export fn main() void = {
 	eval_expr_tuple();
 	eval_expr_access();
 	unpacking();
+	_offset();
 	regression();
 	reject();
 	_never();
+	trailing_comma();
+	undefined();
 };

@@ -101,10 +101,18 @@ fn reject() void = {
 	compile(status::PARSE, `let s = "\xc3" "\xc3";`)!;
 	compile(status::LEX, `let s = "\xa";`)!;
 	compile(status::LEX, `let s = "\u69";`)!;
-	compile(status::LEX, `let s = "\U1234567";`)!;
+	compile(status::LEX, `let s = "\U0000007";`)!;
 	compile(status::LEX, `let s = "\xah";`)!;
 	compile(status::LEX, `let s = "\uahij";`)!;
 	compile(status::LEX, `let s = "\Uahijklmn";`)!;
+	compile(status::LEX, `let s = "\x-0";`)!;
+	compile(status::LEX, `let s = "\x-0";`)!;
+	compile(status::LEX, `let s = "\x+c";`)!;
+	compile(status::LEX, `let s = "\u-000";`)!;
+	compile(status::LEX, `let s = "\u+abc";`)!;
+	compile(status::LEX, `let s = "\u abc";`)!;
+	compile(status::LEX, `let s = "\U-abcdeff";`)!;
+	compile(status::LEX, `let s = "\U  +12345";`)!;
 };
 
 export fn main() void = {
