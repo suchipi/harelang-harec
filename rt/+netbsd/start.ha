@@ -1,15 +1,13 @@
 @symbol("main") fn main() void;
 
-const @symbol("__init_array_start") init_start: [*]*fn() void;
-const @symbol("__init_array_end") init_end: [*]*fn() void;
-const @symbol("__fini_array_start") fini_start: [*]*fn() void;
-const @symbol("__fini_array_end") fini_end: [*]*fn() void;
+@symbol("__init_array_start") const init_start: [*]*fn() void;
+@symbol("__init_array_end") const init_end: [*]*fn() void;
+@symbol("__fini_array_start") const fini_start: [*]*fn() void;
+@symbol("__fini_array_end") const fini_end: [*]*fn() void;
 
 let argc: size = 0;
 let argv: *[*]*const u8 = null: *[*]*const u8;
 let envp: *[*]nullable *const u8 = null: *[*]nullable *const u8;
-
-export let exit_status = 0;
 
 export fn start_ha(iv: *[*]uintptr) never = {
 	const ninit = (&init_end: uintptr - &init_start: uintptr): size
@@ -30,5 +28,5 @@ export fn start_ha(iv: *[*]uintptr) never = {
 		fini_start[i]();
 	};
 
-	exit(exit_status);
+	exit(0);
 };

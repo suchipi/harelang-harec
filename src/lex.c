@@ -18,11 +18,11 @@ static const char *tokens[] = {
 	// Must match enum lexical_token (lex.h)
 	[T_ATTR_FINI] = "@fini",
 	[T_ATTR_INIT] = "@init",
-	[T_ATTR_OFFSET] = "@offset",
 	[T_ATTR_PACKED] = "@packed",
 	[T_ATTR_SYMBOL] = "@symbol",
 	[T_ATTR_TEST] = "@test",
 	[T_ATTR_THREADLOCAL] = "@threadlocal",
+	[T_ATTR_UNDEFINED] = "@undefined",
 	[T_UNDERSCORE] = "_",
 	[T_ABORT] = "abort",
 	[T_ALIGN] = "align",
@@ -60,6 +60,7 @@ static const char *tokens[] = {
 	[T_LET] = "let",
 	[T_MATCH] = "match",
 	[T_NEVER] = "never",
+	[T_NOMEM] = "nomem",
 	[T_NULL] = "null",
 	[T_NULLABLE] = "nullable",
 	[T_OFFSET] = "offset",
@@ -144,7 +145,7 @@ static const char *tokens[] = {
 static_assert(sizeof(tokens) / sizeof(const char *) == T_LAST_OPERATOR + 1,
 	"tokens array isn't in sync with lexical_token enum");
 
-static noreturn void
+FORMAT(2, 3) static noreturn void
 error(struct location loc, const char *fmt, ...)
 {
 	xfprintf(stderr, "%s:%d:%d: syntax error: ", sources[loc.file],
@@ -161,18 +162,21 @@ error(struct location loc, const char *fmt, ...)
 }
 
 void
-lex_init(struct lexer *lexer, FILE *f, int fileid)
+lex_init(struct lexer *lexer, FILE *f, int fileid, struct intern_table *itbl)
 {
-	memset(lexer, 0, sizeof(*lexer));
 	lexer->in = f;
+	lexer->buflen = 0;
 	lexer->bufsz = 256;
-	lexer->buf = xcalloc(1, lexer->bufsz);
+	lexer->buf = xcalloc(lexer->bufsz, 1);
 	lexer->un.token = T_NONE;
 	lexer->loc.lineno = 1;
 	lexer->loc.colno = 0;
 	lexer->loc.file = fileid;
 	lexer->c[0] = UINT32_MAX;
 	lexer->c[1] = UINT32_MAX;
+	lexer->require_int = false;
+	lexer->in_annotation = false;
+	lexer->itbl = itbl;
 }
 
 void
@@ -183,28 +187,20 @@ lex_finish(struct lexer *lexer)
 }
 
 static void
-update_lineno(struct location *loc, uint32_t c)
+update_loc(struct location *loc, uint32_t c)
 {
 	if (c == '\n') {
 		loc->lineno++;
 		loc->colno = 0;
 	} else if (c == '\t') {
+		// set column to next multiple of 8
 		loc->colno += 8;
+		loc->colno &= ~7;
 	} else {
+		// XXX: this doesn't correctly handle all unicode
+		// codepoints/glyphs
 		loc->colno++;
 	}
-}
-
-static void
-append_buffer(struct lexer *lexer, const char *buf, size_t sz)
-{
-	if (lexer->buflen + sz >= lexer->bufsz) {
-		lexer->bufsz *= 2;
-		lexer->buf = xrealloc(lexer->buf, lexer->bufsz);
-	}
-	memcpy(lexer->buf + lexer->buflen, buf, sz);
-	lexer->buflen += sz;
-	lexer->buf[lexer->buflen] = '\0';
 }
 
 static uint32_t
@@ -217,7 +213,7 @@ next(struct lexer *lexer, struct location *loc, bool buffer)
 		lexer->c[1] = UINT32_MAX;
 	} else {
 		c = utf8_get(lexer->in);
-		update_lineno(&lexer->loc, c);
+		update_loc(&lexer->loc, c);
 		if (c == UTF8_INVALID && !feof(lexer->in)) {
 			error(lexer->loc, "Invalid UTF-8 sequence encountered");
 		}
@@ -225,7 +221,7 @@ next(struct lexer *lexer, struct location *loc, bool buffer)
 	if (loc != NULL) {
 		*loc = lexer->loc;
 		for (size_t i = 0; i < 2 && lexer->c[i] != UINT32_MAX; i++) {
-			update_lineno(&lexer->loc, lexer->c[i]);
+			update_loc(&lexer->loc, lexer->c[i]);
 		}
 	}
 	if (c == C_EOF || !buffer) {
@@ -233,7 +229,7 @@ next(struct lexer *lexer, struct location *loc, bool buffer)
 	}
 	char buf[UTF8_MAX_SIZE];
 	size_t sz = utf8_encode(&buf[0], c);
-	append_buffer(lexer, buf, sz);
+	append_buffer(&lexer->buf, &lexer->buflen, &lexer->bufsz, buf, sz);
 	return c;
 }
 
@@ -254,7 +250,6 @@ wgetc(struct lexer *lexer, struct location *loc)
 static void
 clearbuf(struct lexer *lexer) {
 	lexer->buflen = 0;
-	lexer->buf[0] = 0;
 }
 
 static void
@@ -263,7 +258,7 @@ consume(struct lexer *lexer, size_t n)
 	for (size_t i = 0; i < n; i++) {
 		while ((lexer->buf[--lexer->buflen] & 0xC0) == 0x80) ;
 	}
-	lexer->buf[lexer->buflen] = 0;
+	assert(lexer->buflen < lexer->bufsz); // underflow check
 }
 
 static void
@@ -295,6 +290,7 @@ lex_name(struct lexer *lexer, struct token *out)
 		}
 	}
 
+	lexer->buf[lexer->buflen] = '\0'; // for cmp_keyword
 	void *token = bsearch(&lexer->buf, tokens, T_LAST_KEYWORD + 1,
 			sizeof(tokens[0]), cmp_keyword);
 	if (!token) {
@@ -302,7 +298,7 @@ lex_name(struct lexer *lexer, struct token *out)
 			error(out->loc, "Unknown attribute %s", lexer->buf);
 		}
 		out->token = T_NAME;
-		out->name = xstrdup(lexer->buf);
+		out->name = intern_copy(lexer->itbl, lexer->buf);
 	} else {
 		out->token = (const char **)token - tokens;
 	}
@@ -449,6 +445,7 @@ want_int:
 	}
 	out->token = T_LITERAL;
 	lexer->require_int = false;
+	lexer->buf[lexer->buflen] = '\0';
 
 	enum kind {
 		UNKNOWN = -1,
@@ -475,7 +472,7 @@ want_int:
 	};
 	if (suff) {
 		for (size_t i = 0; i < sizeof storages / sizeof storages[0]; i++) {
-			if (!strcmp(storages[i].suff, lexer->buf + suff)) {
+			if (strcmp(storages[i].suff, lexer->buf + suff) == 0) {
 				out->storage = storages[i].storage;
 				kind = storages[i].kind;
 				break;
@@ -573,7 +570,8 @@ lex_rune(struct lexer *lexer, char *out)
 			buf[1] = next(lexer, NULL, false);
 			buf[2] = '\0';
 			c = strtoul(&buf[0], &endptr, 16);
-			if (*endptr != '\0') {
+			// need isxdigit check to disallow sign
+			if (*endptr != '\0' || !isxdigit(buf[0])) {
 				error(loc, "Invalid hex literal");
 			}
 			out[0] = c;
@@ -585,7 +583,8 @@ lex_rune(struct lexer *lexer, char *out)
 			buf[3] = next(lexer, NULL, false);
 			buf[4] = '\0';
 			c = strtoul(&buf[0], &endptr, 16);
-			if (*endptr != '\0') {
+			// need isxdigit check to disallow sign
+			if (*endptr != '\0' || !isxdigit(buf[0])) {
 				error(loc, "Invalid hex literal");
 			}
 			return utf8_encode(out, c);
@@ -600,7 +599,8 @@ lex_rune(struct lexer *lexer, char *out)
 			buf[7] = next(lexer, NULL, false);
 			buf[8] = '\0';
 			c = strtoul(&buf[0], &endptr, 16);
-			if (*endptr != '\0') {
+			// need isxdigit check to disallow sign
+			if (*endptr != '\0' || !isxdigit(buf[0])) {
 				error(loc, "Invalid hex literal");
 			}
 			return utf8_encode(out, c);
@@ -634,17 +634,17 @@ lex_string(struct lexer *lexer, struct token *out)
 			push(lexer, c, false);
 			if (delim == '"') {
 				size_t sz = lex_rune(lexer, buf);
-				append_buffer(lexer, buf, sz);
+				append_buffer(&lexer->buf, &lexer->buflen,
+					&lexer->bufsz, buf, sz);
 			} else {
 				next(lexer, NULL, true);
 			}
 		}
-		char *s = xcalloc(lexer->buflen + 1, 1);
-		memcpy(s, lexer->buf, lexer->buflen);
 		out->token = T_LITERAL;
 		out->storage = STORAGE_STRING;
+		lexer->buf[lexer->buflen] = '\0';
 		out->string.len = lexer->buflen;
-		out->string.value = s;
+		out->string.value = lexer->buf;
 		clearbuf(lexer);
 		return out->token;
 	case '\'':
@@ -978,6 +978,97 @@ rune_unparse(uint32_t c)
 	return buf;
 }
 
+static void
+lex_annotation(struct lexer *lexer)
+{
+	// Scan and discard annotations
+	if (lexer->in_annotation) {
+		error(lexer->loc, "cannot nest annotations");
+		return;
+	}
+	lexer->in_annotation = true;
+
+	struct token tok;
+	if (next(lexer, NULL, false) != '[') {
+		error(lexer->loc, "invalid annotation (expected '[')");
+		return;
+	}
+
+	enum lexical_token ltok;
+
+	// identifier
+	ltok = lex(lexer, &tok);
+	if (ltok != T_NAME) {
+		error(lexer->loc, "invalid annotation (expected identifier)");
+	}
+	while (true) {
+		ltok = lex(lexer, &tok);
+		if (ltok != T_DOUBLE_COLON) {
+			unlex(lexer, &tok);
+			break;
+		}
+		ltok = lex(lexer, &tok);
+		if (ltok != T_NAME) {
+			error(lexer->loc, "invalid annotation (expected identifier)");
+		}
+	}
+
+	switch (lex(lexer, &tok))
+	{
+	case T_LPAREN:
+		break;
+	case T_RBRACKET:
+		goto exit;
+	default:
+		error(lexer->loc, "invalid annotation (expected '(' or ']')");
+	}
+
+	// balanced list of tokens
+	int sp = 0;
+	enum lexical_token stack[32] = {T_LPAREN, 0};
+
+	do {
+		if (sp + 1 >= 32) {
+			error(lexer->loc, "annotation is too nested");
+		}
+
+		enum lexical_token want = 0;
+		ltok = lex(lexer, &tok);
+		switch (ltok) {
+		case T_LPAREN:
+		case T_LBRACE:
+		case T_LBRACKET:
+			stack[++sp] = ltok;
+			break;
+		case T_RPAREN:
+			want = T_LPAREN;
+			break;
+		case T_RBRACE:
+			want = T_LBRACE;
+			break;
+		case T_RBRACKET:
+			want = T_LBRACKET;
+			break;
+		default:
+			break;
+		}
+
+		if (want != 0) {
+			ltok = stack[sp--];
+			if (ltok != want) {
+				error(lexer->loc, "unbalanced tokens in annotation");
+			}
+		}
+	} while (sp >= 0);
+
+	if (lex(lexer, &tok) != T_RBRACKET) {
+		error(lexer->loc, "invalid annotation (expected ']')");
+	}
+
+exit:
+	lexer->in_annotation = false;
+}
+
 enum lexical_token
 lex(struct lexer *lexer, struct token *out)
 {
@@ -993,6 +1084,8 @@ lex(struct lexer *lexer, struct token *out)
 		if (c == C_EOF) {
 			out->token = T_EOF;
 			return out->token;
+		} else if (c == '#') {
+			lex_annotation(lexer);
 		} else if (c == '/') {
 			c = next(lexer, NULL, false);
 			if (c != '/') {
@@ -1081,32 +1174,6 @@ lex(struct lexer *lexer, struct token *out)
 	return out->token;
 }
 
-void
-token_finish(struct token *tok)
-{
-	switch (tok->token) {
-	case T_NAME:
-		free(tok->name);
-		break;
-	case T_LITERAL:
-		switch (tok->storage) {
-		case STORAGE_STRING:
-			free(tok->string.value);
-			break;
-		default:
-			break;
-		}
-		break;
-	default:
-		break;
-	}
-	tok->token = 0;
-	tok->storage = 0;
-	tok->loc.file = 0;
-	tok->loc.colno = 0;
-	tok->loc.lineno = 0;
-}
-
 const char *
 lexical_token_str(enum lexical_token tok)
 {
@@ -1189,13 +1256,16 @@ token_str(const struct token *tok)
 		case STORAGE_ALIAS:
 		case STORAGE_ARRAY:
 		case STORAGE_BOOL:
+		case STORAGE_DONE:
 		case STORAGE_ENUM:
 		case STORAGE_ERROR:
+		case STORAGE_INVALID:
 		case STORAGE_FUNCTION:
-		case STORAGE_POINTER:
 		case STORAGE_NEVER:
+		case STORAGE_NOMEM:
 		case STORAGE_NULL:
 		case STORAGE_OPAQUE:
+		case STORAGE_POINTER:
 		case STORAGE_RUNE:
 		case STORAGE_SLICE:
 		case STORAGE_STRUCT:
@@ -1204,7 +1274,7 @@ token_str(const struct token *tok)
 		case STORAGE_UNION:
 		case STORAGE_VALIST:
 		case STORAGE_VOID:
-		case STORAGE_DONE:
+		case STORAGE_UNDEFINED:
 			assert(0);
 		}
 		return buf;

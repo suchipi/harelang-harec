@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "util.h"
 
 enum qbe_stype {
 	Q__VOID = 'V',
@@ -26,6 +27,7 @@ struct qbe_field {
 
 struct qbe_type {
 	enum qbe_stype stype;
+	bool sgn; // for sub-word types
 	size_t size;
 
 	// Aggregate types only:
@@ -36,14 +38,15 @@ struct qbe_type {
 
 // Simple type singletons
 extern const struct qbe_type
-	qbe_byte,
-	qbe_half,
+	qbe_sbyte,
+	qbe_ubyte,
+	qbe_shalf,
+	qbe_uhalf,
 	qbe_word,
 	qbe_long,
 	qbe_single,
 	qbe_double,
-	qbe_void,
-	qbe_aggregate;
+	qbe_void;
 
 enum qbe_value_kind {
 	QV_CONST,
@@ -58,7 +61,7 @@ struct qbe_value {
 	bool threadlocal;
 	const struct qbe_type *type;
 	union {
-		char *name;
+		const char *name;
 		uint32_t wval;
 		uint64_t lval;
 		float sval;
@@ -227,7 +230,7 @@ struct qbe_data_item {
 			size_t sz;
 		};
 		struct {
-			char *sym;
+			const char *sym;
 			int64_t offset;
 		};
 	};
@@ -248,7 +251,7 @@ enum qbe_defkind {
 };
 
 struct qbe_def {
-	char *name;
+	const char *name;
 	int file;
 	enum qbe_defkind kind;
 	bool exported;
@@ -269,7 +272,7 @@ void qbe_append_def(struct qbe_program *prog, struct qbe_def *def);
 
 void pushi(struct qbe_func *func, const struct qbe_value *out, enum qbe_instr instr, ...);
 void pushprei(struct qbe_func *func, const struct qbe_value *out, enum qbe_instr instr, ...);
-void pushc(struct qbe_func *func, const char *fmt, ...);
+void pushc(struct qbe_func *func, const char *fmt, ...) FORMAT(2, 3);
 void push(struct qbe_statements *stmts, struct qbe_statement *stmt);
 
 struct qbe_value constl(uint64_t l);

@@ -86,9 +86,13 @@ emit_literal(const struct expression *expr, FILE *out)
 		xfprintf(out, "%" PRIi64 "%s", val->ival,
 			storage_to_suffix(t->storage));
 		break;
-	case STORAGE_POINTER: // TODO
+	case STORAGE_POINTER:
+		xfprintf(out, "%" PRIu64 ": u64: uintptr: ", val->uval);
+		emit_type(expr->result, out);
+		break;
 	case STORAGE_NULL:
-		xfprintf(out, "null");
+		xfprintf(out, "null: ");
+		emit_type(expr->result, out);
 		break;
 	case STORAGE_SIZE:
 	case STORAGE_U16:
@@ -123,7 +127,7 @@ emit_literal(const struct expression *expr, FILE *out)
 		xfprintf(out, "\"");
 		break;
 	case STORAGE_ENUM:;
-		char *ident = identifier_unparse(&expr->result->alias.ident);
+		char *ident = ident_unparse(expr->result->alias.ident);
 		if (t->alias.type->storage == STORAGE_UINTPTR) {
 			xfprintf(out, "%" PRIu64 ": uintptr", val->uval);
 		} else if (type_is_signed(NULL, t->alias.type)) {
@@ -170,8 +174,7 @@ emit_literal(const struct expression *expr, FILE *out)
 		break;
 	case STORAGE_STRUCT:
 		if (expr->result->storage == STORAGE_ALIAS) {
-			char *ident =
-				identifier_unparse(&expr->result->alias.ident);
+			char *ident = ident_unparse(expr->result->alias.ident);
 			xfprintf(out, "%s", ident);
 			free(ident);
 		} else {
@@ -191,11 +194,16 @@ emit_literal(const struct expression *expr, FILE *out)
 	case STORAGE_UNION:
 		assert(0); // TODO, blocked on union support in eval
 	case STORAGE_ALIAS:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
+		xfprintf(out, "nomem");
+		break;
+	case STORAGE_ERROR:
 	case STORAGE_OPAQUE:
 	case STORAGE_VALIST:
+	case STORAGE_UNDEFINED:
 		assert(0); // Invariant
 	}
 }
@@ -208,9 +216,6 @@ emit_struct(const struct type *type, FILE *out)
 			type->struct_union.packed ? "@packed " : "");
 	for (const struct struct_field *f = type->struct_union.fields;
 			f; f = f->next) {
-		if (!type->struct_union.c_compat) {
-			xfprintf(out, "@offset(%zu) ", f->offset);
-		}
 		if (f->name) {
 			xfprintf(out, "%s: ", f->name);
 		}
@@ -223,14 +228,11 @@ emit_struct(const struct type *type, FILE *out)
 void
 emit_type(const struct type *type, FILE *out)
 {
-	if (type->flags & TYPE_ERROR) {
-		xfprintf(out, "!");
-	}
-
 	char *ident;
 	switch (type->storage) {
 	case STORAGE_BOOL:
-	case STORAGE_ERROR:
+	case STORAGE_DONE:
+	case STORAGE_INVALID:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_FCONST:
@@ -240,6 +242,7 @@ emit_type(const struct type *type, FILE *out)
 	case STORAGE_I8:
 	case STORAGE_INT:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_OPAQUE:
 	case STORAGE_RCONST:
@@ -254,12 +257,15 @@ emit_type(const struct type *type, FILE *out)
 	case STORAGE_UINTPTR:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
+	case STORAGE_UNDEFINED:
 		xfprintf(out, "%s", type_storage_unparse(type->storage));
 		break;
+	case STORAGE_ERROR:
+		xfprintf(out, "!");
+		emit_type(type->error, out);
+		break;
 	case STORAGE_POINTER:
-		xfprintf(out, "%s*", type->pointer.flags & PTR_NULLABLE
-				? "nullable " : "");
+		xfprintf(out, "%s*", type->pointer.nullable ? "nullable " : "");
 		emit_type(type->pointer.referent, out);
 		break;
 	case STORAGE_ARRAY:
@@ -275,18 +281,16 @@ emit_type(const struct type *type, FILE *out)
 		emit_type(type->array.members, out);
 		break;
 	case STORAGE_ALIAS:
-		ident = identifier_unparse(&type->alias.ident);
+		ident = ident_unparse(type->alias.ident);
 		xfprintf(out, "%s", ident);
 		free(ident);
 		break;
 	case STORAGE_TAGGED:
 		xfprintf(out, "(");
-		for (const struct type_tagged_union *tu = &type->tagged;
-				tu; tu = tu->next) {
-			emit_type(tu->type, out);
-			if (tu->next) {
-				xfprintf(out, " | ");
-			}
+		emit_type(type->tagged.types[0], out);
+		for (size_t i = 1; i < type->tagged.len; i++) {
+			xfprintf(out, " | ");
+			emit_type(type->tagged.types[i], out);
 		}
 		xfprintf(out, ")");
 		break;
@@ -298,6 +302,7 @@ emit_type(const struct type *type, FILE *out)
 		xfprintf(out, "fn(");
 		for (const struct type_func_param *param = type->func.params;
 				param; param = param->next) {
+			xfprintf(out, "_: ");
 			if (param->next) {
 				emit_type(param->type, out);
 				xfprintf(out, ", ");
@@ -315,7 +320,7 @@ emit_type(const struct type *type, FILE *out)
 		emit_type(type->func.result, out);
 		break;
 	case STORAGE_ENUM:
-		ident = identifier_unparse(&type->alias.ident);
+		ident = ident_unparse(type->alias.ident);
 		xfprintf(out, "%s", ident);
 		free(ident);
 		break;
@@ -331,7 +336,7 @@ emit_type(const struct type *type, FILE *out)
 		xfprintf(out, ")");
 		break;
 	case STORAGE_ICONST:
-		xfprintf(out, "[iconst min=%" PRIi64 " max=%" PRIi64 "]", type->flexible.min,
+		xfprintf(out, "[flexible integer: min=%" PRIi64 " max=%" PRIi64 "]", type->flexible.min,
 			type->flexible.max);
 		break;
 	}
@@ -340,7 +345,7 @@ emit_type(const struct type *type, FILE *out)
 static void
 emit_decl_const(const struct declaration *decl, FILE *out)
 {
-	char *ident = identifier_unparse(&decl->ident);
+	char *ident = ident_unparse(decl->ident);
 	xfprintf(out, "export def %s", ident);
 	assert(decl->constant.type);
 	if (decl->constant.type->size != SIZE_UNDEFINED) {
@@ -356,7 +361,7 @@ emit_decl_const(const struct declaration *decl, FILE *out)
 static void
 emit_decl_func(const struct declaration *decl, FILE *out)
 {
-	char *ident = identifier_unparse(&decl->ident);
+	char *ident = ident_unparse(decl->ident);
 	const struct type *fntype = decl->func.type;
 	xfprintf(out, "export ");
 	if (decl->symbol) {
@@ -366,6 +371,7 @@ emit_decl_func(const struct declaration *decl, FILE *out)
 
 	for (const struct type_func_param *param = fntype->func.params;
 			param; param = param->next) {
+		xfprintf(out, "_: ");
 		if (param->next) {
 			emit_type(param->type, out);
 			if (param->default_value) {
@@ -397,14 +403,15 @@ emit_decl_func(const struct declaration *decl, FILE *out)
 static void
 emit_decl_global(const struct declaration *decl, FILE *out)
 {
-	char *ident = identifier_unparse(&decl->ident);
-	xfprintf(out, "export let ");
+	char *ident = ident_unparse(decl->ident);
+	xfprintf(out, "export ");
 	if (decl->symbol) {
 		xfprintf(out, "@symbol(\"%s\") ", decl->symbol);
 	}
 	if (decl->global.threadlocal) {
 		xfprintf(out, "@threadlocal ");
 	}
+	xfprintf(out, "let ");
 	xfprintf(out, "%s: ", ident);
 	emit_type(decl->global.type, out);
 	xfprintf(out, ";\n");
@@ -414,7 +421,7 @@ emit_decl_global(const struct declaration *decl, FILE *out)
 static void
 emit_decl_type(const struct declaration *decl, FILE *out)
 {
-	char *ident = identifier_unparse(&decl->ident);
+	char *ident = ident_unparse(decl->ident);
 	xfprintf(out, "export type %s = ", ident);
 	assert(decl->type->storage == STORAGE_ALIAS
 			|| decl->type->storage == STORAGE_ENUM);
@@ -425,7 +432,7 @@ emit_decl_type(const struct declaration *decl, FILE *out)
 		for (const struct scope_object *ev = type->_enum.values->objects;
 				ev; ev = ev->lnext) {
 			assert(ev->otype != O_SCAN);
-			xfprintf(out, "%s = ", ev->name.name);
+			xfprintf(out, "%s = ", ev->name->name);
 			emit_literal(ev->value, out);
 			xfprintf(out, ", ");
 		}
@@ -454,7 +461,7 @@ emit_typedefs(const struct unit *unit, FILE *out)
 {
 	for (const struct identifiers *imports = unit->imports;
 			imports; imports = imports->next) {
-		char *ident = identifier_unparse(&imports->ident);
+		char *ident = ident_unparse(imports->ident);
 		xfprintf(out, "use %s;\n", ident);
 		free(ident);
 	}

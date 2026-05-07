@@ -17,6 +17,7 @@ enum type_storage {
 	STORAGE_I8,
 	STORAGE_INT,
 	STORAGE_NEVER,
+	STORAGE_NOMEM,
 	STORAGE_NULL,
 	STORAGE_OPAQUE,
 	STORAGE_RUNE,
@@ -28,6 +29,7 @@ enum type_storage {
 	STORAGE_U8,
 	STORAGE_UINT,
 	STORAGE_UINTPTR,
+	STORAGE_UNDEFINED,
 	STORAGE_VOID,
 	// Other types
 	STORAGE_ALIAS,
@@ -44,8 +46,9 @@ enum type_storage {
 	STORAGE_FCONST,
 	STORAGE_ICONST,
 	STORAGE_RCONST,
-	// For internal use only
 	STORAGE_ERROR,
+	// For internal use only
+	STORAGE_INVALID,
 };
 
 struct context;
@@ -55,8 +58,8 @@ struct type;
 #define ALIGN_UNDEFINED ((size_t)-1)
 
 struct type_alias {
-	struct identifier ident;
-	struct identifier name;
+	struct ident *ident;
+	struct ident *name;
 	const struct type *type;
 	bool exported; // Used to make sure unexported aliases aren't emitted
 };
@@ -97,17 +100,13 @@ struct type_flexible {
 	size_t zrefs;
 };
 
-enum pointer_flags {
-	PTR_NULLABLE = 1 << 0,
-};
-
 struct type_pointer {
 	const struct type *referent;
-	unsigned int flags;
+	bool nullable;
 };
 
 struct struct_field {
-	char *name;
+	const char *name;
 	const struct type *type;
 	size_t offset;
 	size_t size;
@@ -116,12 +115,6 @@ struct struct_field {
 
 struct type_struct_union {
 	struct struct_field *fields;
-	// c_compat is false if explicit offsets are used, or if the type is a
-	// union. The latter is actually still C-compatible, but this is an
-	// implementation detail which changes the way the QBE IL is generated,
-	// and in the case of unions, the altered behavior for explicit-offset
-	// structs is also correct for all cases of unions.
-	bool c_compat;
 	bool packed;
 };
 
@@ -132,18 +125,14 @@ struct type_tuple {
 };
 
 struct type_tagged_union {
-	const struct type *type;
-	struct type_tagged_union *next;
-};
-
-enum type_flags {
-	TYPE_ERROR = 1 << 0,
+	const struct type **types;
+	size_t len;
+	size_t cap;
 };
 
 struct type {
 	enum type_storage storage;
 	uint32_t id;
-	unsigned int flags;
 	size_t size, align;
 	union {
 		struct {
@@ -151,6 +140,7 @@ struct type {
 			struct type_enum _enum;
 		};
 		struct type_array array;
+		const struct type *error;
 		struct type_flexible flexible;
 		struct type_func func;
 		struct type_pointer pointer;
@@ -160,20 +150,17 @@ struct type {
 	};
 };
 
-struct dimensions {
-	size_t size;
-	size_t align;
-};
-
-const struct type *type_dereference(struct context *ctx, const struct type *type);
+const struct type *type_dereference(struct context *ctx, const struct type *type,
+		bool allow_nullable);
 const struct type *type_dealias(struct context *ctx, const struct type *type);
+bool type_is_done(struct context *ctx, const struct type *type);
 const struct struct_field *type_get_field(struct context *ctx,
 	const struct type *type, const char *name);
 const struct type_tuple *type_get_value(
 	const struct type *type, uint64_t index);
 
-struct type_tagged_union * 
-tagged_dup_tags(const struct type_tagged_union *tags);
+void tagged_append(struct type_tagged_union *tagged, const struct type *memb);
+struct type_tagged_union tagged_dup_tags(const struct type_tagged_union *tags);
 const struct type *tagged_select_subtype(struct context *ctx,
 	const struct type *tagged, const struct type *subtype, bool strip);
 bool tagged_subset_compat(struct context *ctx,
@@ -185,9 +172,11 @@ bool type_is_integer(struct context *ctx, const struct type *type);
 bool type_is_numeric(struct context *ctx, const struct type *type);
 bool type_is_float(struct context *ctx, const struct type *type);
 bool type_is_flexible(const struct type *type);
+bool type_is_error(struct context *ctx, const struct type *type);
 bool type_has_error(struct context *ctx, const struct type *type);
 
 uint32_t type_hash(const struct type *type);
+bool type_equal(const struct type *a, const struct type *b);
 
 const struct type *promote_flexible(struct context *ctx,
 	const struct type *a, const struct type *b);
@@ -209,28 +198,32 @@ void builtin_types_init(const char *target);
 extern struct type
 	// Primitive
 	builtin_type_bool,
-	builtin_type_error,
+	builtin_type_done,
+	builtin_type_invalid,
 	builtin_type_f32,
 	builtin_type_f64,
-	builtin_type_i8,
 	builtin_type_i16,
 	builtin_type_i32,
 	builtin_type_i64,
+	builtin_type_i8,
 	builtin_type_int,
 	builtin_type_never,
+	builtin_type_nomem,
+	builtin_type_null,
 	builtin_type_opaque,
-	builtin_type_u8,
+	builtin_type_rune,
+	builtin_type_size,
 	builtin_type_u16,
 	builtin_type_u32,
 	builtin_type_u64,
+	builtin_type_u8,
 	builtin_type_uint,
 	builtin_type_uintptr,
-	builtin_type_null,
-	builtin_type_rune,
-	builtin_type_size,
 	builtin_type_void,
-	builtin_type_done,
+
+	// etc
 	builtin_type_str,
-	builtin_type_valist;
+	builtin_type_valist,
+	builtin_type_undefined;
 
 #endif

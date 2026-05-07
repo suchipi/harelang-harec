@@ -1,10 +1,10 @@
-export fn strcmp(_a: str, _b: str) bool = {
-	if (len(_a) != len(_b)) {
+export fn strcmp(a: str, b: str) bool = {
+	if (len(a) != len(b)) {
 		return false;
 	};
-	let a = (&_a: *string).data, b = (&_b: *string).data;
-	let a = a: *[*]u8, b = b: *[*]u8;
-	for (let i = 0z; i < len(_a); i += 1) {
+	let ln = len(a);
+	let a = toutf8(a): *[*]u8, b = toutf8(b): *[*]u8;
+	for (let i = 0z; i < ln; i += 1) {
 		if (a[i] != b[i]) {
 			return false;
 		};

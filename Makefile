@@ -26,7 +26,7 @@ $(BINOUT)/harec: $(harec_objects)
 	@$(CC) $(LDFLAGS) -o $@ $(harec_objects) $(LIBS)
 
 .SUFFIXES:
-.SUFFIXES: .ssa .td .c .o .s .scd .1 .5
+.SUFFIXES: .ssa .td .c .o .s
 
 .PRECIOUS: %.td %.ssa %.s %.o
 
@@ -67,9 +67,9 @@ check: $(BINOUT)/harec
 	@$(TDENV) ./tests/run
 
 install: $(BINOUT)/harec
-	@#install -Dm755 $(BINOUT)/harec $(DESTDIR)$(BINDIR)/harec
+	@#install -Dm755 -- $(BINOUT)/harec $(DESTDIR)$(BINDIR)/harec
 	@install -dm755 $(DESTDIR)$(BINDIR)
-	install -m755 $(BINOUT)/harec $(DESTDIR)$(BINDIR)/harec
+	install -m755 -- $(BINOUT)/harec $(DESTDIR)$(BINDIR)/harec
 
 uninstall:
 	rm -- '$(DESTDIR)$(BINDIR)/harec'

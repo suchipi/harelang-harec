@@ -98,26 +98,12 @@ fn _never() void = {
 			exit(x);
 		};
 	};
-
-	defer x += 1;
-	{
-		x = 0;
-		defer x += 1;
-		// above defers are run before this executes, so this is never
-		// actually reached
-		abort();
-	};
 };
 
 fn exit(x: int) never = {
 	assert(x == 0);
-	defer rt::exit(x);
-	(void: !void: (void | !void))!; // void
-	x = 1;
-	abort();
+	rt::exit(x);
 };
-
-@fini fn fini() void = assert(x == 2);
 
 fn nested() void = {
 	let sl: []size = [];
@@ -130,16 +116,16 @@ fn nested() void = {
 	};
 
 	defer {
-		defer append(sl, 6);
+		defer append(sl, 6)!;
 		defer if (true) {
-			append(sl, 3);
-			defer append(sl, 5);
-			append(sl, 4);
+			append(sl, 3)!;
+			defer append(sl, 5)!;
+			append(sl, 4)!;
 		};
-		append(sl, 2);
+		append(sl, 2)!;
 	};
-	defer append(sl, 1);
-	append(sl, 0);
+	defer append(sl, 1)!;
+	append(sl, 0)!;
 };
 
 fn spam() void = {

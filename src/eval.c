@@ -102,18 +102,21 @@ itrunc(struct context *ctx, const struct type *type, uint64_t val)
 		return val;
 	case STORAGE_NULL:
 		return (uintptr_t)NULL;
+	case STORAGE_ERROR:
 	case STORAGE_ALIAS:
 		return itrunc(ctx, type_dealias(ctx, type), val);
 	case STORAGE_ENUM:
 		return itrunc(ctx, type->alias.type, val);
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 		return val;
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_F32:
 	case STORAGE_F64:
 	case STORAGE_FCONST:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_POINTER:
 	case STORAGE_SLICE:
@@ -124,7 +127,7 @@ itrunc(struct context *ctx, const struct type *type, uint64_t val)
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
+	case STORAGE_UNDEFINED:
 		assert(0);
 	}
 	assert(0);
@@ -408,6 +411,7 @@ eval_literal(struct context *ctx,
 	switch (storage) {
 	case STORAGE_ALIAS:
 	case STORAGE_ENUM:
+	case STORAGE_ERROR:
 		assert(0); // Handled above
 	case STORAGE_ARRAY:;
 		struct array_literal **anext = &out->literal.array;
@@ -465,14 +469,15 @@ eval_literal(struct context *ctx,
 		}
 		break;
 	case STORAGE_BOOL:
-	case STORAGE_ERROR:
+	case STORAGE_DONE:
+	case STORAGE_INVALID:
 	case STORAGE_F64:
 	case STORAGE_FCONST:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_POINTER:
-	case STORAGE_VOID:
-	case STORAGE_DONE:
 	case STORAGE_SLICE:
+	case STORAGE_VOID:
 		out->literal = in->literal;
 		break;
 	case STORAGE_F32:
@@ -499,6 +504,7 @@ eval_literal(struct context *ctx,
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
 	case STORAGE_VALIST:
+	case STORAGE_UNDEFINED:
 		abort(); // Invariant
 	}
 	return true;
@@ -582,7 +588,11 @@ eval_cast(struct context *ctx,
 		return true;
 	}
 
-	if (from->storage == STORAGE_ERROR) {
+	if (from->storage == STORAGE_INVALID) {
+		return true;
+	} else if (from->storage == STORAGE_UNDEFINED) {
+		out->type = EXPR_UNDEFINED;
+		out->result = to;
 		return true;
 	} else if (from->storage == STORAGE_TAGGED) {
 		out->literal = val.literal.tagged.value->literal;
@@ -672,6 +682,7 @@ eval_cast(struct context *ctx,
 		return true;
 	case STORAGE_NULL:
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 		assert(0); // Handled above
 	case STORAGE_BOOL:
 	case STORAGE_FUNCTION:
@@ -683,9 +694,11 @@ eval_cast(struct context *ctx,
 	case STORAGE_UNION:
 	case STORAGE_VALIST:
 		assert(0); // Invariant
-	case STORAGE_ERROR:
-	case STORAGE_VOID:
 	case STORAGE_DONE:
+	case STORAGE_INVALID:
+	case STORAGE_NOMEM:
+	case STORAGE_VOID:
+	case STORAGE_UNDEFINED:
 		return true;
 	}
 
@@ -698,7 +711,7 @@ eval_len(struct context *ctx,
 	struct expression *restrict out)
 {
 	assert(in->type == EXPR_LEN);
-	const struct type *expr_type = type_dereference(ctx, in->len.value->result);
+	const struct type *expr_type = type_dereference(ctx, in->len.value->result, false);
 	assert(expr_type != NULL);
 	expr_type = type_dealias(ctx, expr_type);
 
@@ -714,7 +727,7 @@ eval_len(struct context *ctx,
 	case STORAGE_STRING:
 		out->literal.uval = obj.literal.string.len;
 		return true;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 		out->literal.uval = 0;
 		return true;
 	case STORAGE_ARRAY:
@@ -737,7 +750,7 @@ literal_default(struct context *ctx, struct expression *v)
 	struct expression b = {0};
 	const struct type *t = type_dealias(ctx, v->result);
 	switch (t->storage) {
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_POINTER:
 	case STORAGE_I16:
 	case STORAGE_I32:
@@ -761,6 +774,7 @@ literal_default(struct context *ctx, struct expression *v)
 	case STORAGE_RUNE:
 	case STORAGE_SLICE:
 	case STORAGE_BOOL:
+	case STORAGE_UNDEFINED:
 		break; // calloc does this for us
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
@@ -809,13 +823,15 @@ literal_default(struct context *ctx, struct expression *v)
 		}
 		break;
 	case STORAGE_ALIAS:
+	case STORAGE_ERROR:
 	case STORAGE_FUNCTION:
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
 	case STORAGE_VALIST:
 		assert(0); // Invariant
-	case STORAGE_VOID:
 	case STORAGE_DONE:
+	case STORAGE_NOMEM:
+	case STORAGE_VOID:
 		break; // no-op
 	}
 
@@ -847,14 +863,19 @@ count_struct_fields(struct context *ctx, const struct type *type)
 }
 
 static bool
-autofill_struct(struct context *ctx, const struct type *type, struct struct_literal **fields)
-{
+autofill_struct(
+	struct context *ctx,
+	const struct type *type,
+	struct struct_literal **fields,
+	bool undefined
+) {
 	assert(type->storage == STORAGE_STRUCT || type->storage == STORAGE_UNION);
 	for (const struct struct_field *field = type->struct_union.fields;
 			field; field = field->next) {
 		if (!field->name) {
 			bool r = autofill_struct(ctx,
-				type_dealias(ctx, field->type), fields);
+				type_dealias(ctx, field->type),
+				fields, undefined);
 			if (!r) {
 				return false;
 			}
@@ -872,12 +893,16 @@ autofill_struct(struct context *ctx, const struct type *type, struct struct_lite
 			fields[i] = xcalloc(1, sizeof(struct struct_literal));
 			fields[i]->field = field;
 			fields[i]->value = xcalloc(1, sizeof(struct expression));
-			fields[i]->value->type = EXPR_LITERAL;
 			fields[i]->value->result = field->type;
-			// TODO: there should probably be a better error message
-			// when this happens
 			if (!literal_default(ctx, fields[i]->value)) {
-				return false;
+				// TODO: there should probably be a better
+				// error message when this happens
+				if (!undefined) {
+					return false;
+				}
+				fields[i]->value->type = EXPR_UNDEFINED;
+			} else {
+				fields[i]->value->type = EXPR_LITERAL;
 			}
 		}
 	}
@@ -915,7 +940,7 @@ eval_struct(struct context *ctx,
 	assert(in->_struct.autofill || i == n);
 
 	if (in->_struct.autofill) {
-		if (!autofill_struct(ctx, type, fields)) {
+		if (!autofill_struct(ctx, type, fields, in->_struct.undefined)) {
 			return false;
 		}
 	}
@@ -1048,6 +1073,112 @@ eval_tuple(struct context *ctx,
 	return true;
 }
 
+static bool
+eval_address_object(struct context *ctx,
+	const struct expression *restrict in,
+	struct expression *restrict out)
+{
+	const struct expression_access *access =
+		&in->unarithm.operand->access;
+	struct expression new_in = {0};
+	const struct type *operand_type;
+	switch (access->type) {
+	case ACCESS_IDENTIFIER:
+		if (access->object->otype != O_DECL) {
+			return false;
+		}
+		out->literal.object = access->object;
+		out->literal.ival = 0;
+		return true;
+	case ACCESS_INDEX:
+		new_in = *in;
+		new_in.unarithm.operand = access->array;
+		if (!eval_expr(ctx, &new_in, out)) {
+			return false;
+		}
+		struct expression index = {0};
+		if (!eval_expr(ctx, access->index, &index)) {
+			return false;
+		}
+		operand_type = type_dealias(ctx, access->array->result);
+		if (operand_type->storage != STORAGE_ARRAY) {
+			// autodereferencing not allowed
+			return false;
+		}
+		out->literal.ival +=
+			index.literal.uval * operand_type->array.members->size;
+		return true;
+	case ACCESS_FIELD:
+		new_in = *in;
+		new_in.unarithm.operand = access->_struct;
+		if (!eval_expr(ctx, &new_in, out)) {
+			return false;
+		}
+		operand_type = type_dealias(ctx, access->tuple->result);
+		if (operand_type->storage != STORAGE_STRUCT) {
+			// autodereferencing not allowed
+			return false;
+		}
+		out->literal.ival += access->field->offset;
+		return true;
+	case ACCESS_TUPLE:
+		new_in = *in;
+		new_in.unarithm.operand = access->tuple;
+		if (!eval_expr(ctx, &new_in, out)) {
+			return false;
+		}
+		operand_type = type_dealias(ctx, access->tuple->result);
+		if (operand_type->storage != STORAGE_TUPLE) {
+			// autodereferencing not allowed
+			return false;
+		}
+		out->literal.ival += access->tvalue->offset;
+		return true;
+	}
+	return true;
+}
+
+static bool
+eval_address_other(struct context *ctx,
+	const struct expression *restrict in,
+	struct expression *restrict out)
+{
+	struct expression *value = xcalloc(1, sizeof(struct expression));
+	if (!eval_expr(ctx, in->unarithm.operand, value)) {
+		return false;
+	}
+
+	char *symbol = gen_name(&ctx->id, "static.%d");
+	struct ident *name = mkident(ctx, NULL, symbol);
+
+	append_decl(ctx, &(struct declaration){
+		.decl_type = DECL_GLOBAL,
+		.file = in->loc.file,
+		.ident = name,
+		.symbol = symbol,
+		.exported = false,
+		.global = {
+			.type = value->result,
+			.value = value,
+			.threadlocal = false,
+		}
+	});
+
+	struct scope_object *obj = scope_insert(ctx->scope,
+			O_DECL, name, name, value->result, NULL);
+
+	struct expression shadow = *in;
+	shadow.unarithm.operand = &(struct expression){
+		.type = EXPR_ACCESS,
+		.access = (struct expression_access){
+			.type = ACCESS_IDENTIFIER,
+			.object = obj,
+		},
+	};
+	bool r = eval_address_object(ctx, &shadow, out);
+	assert(r);
+	return true;
+}
 
 static bool
 eval_unarithm(struct context *ctx,
@@ -1055,71 +1186,17 @@ eval_unarithm(struct context *ctx,
 	struct expression *restrict out)
 {
 	if (in->unarithm.op == UN_ADDRESS) {
-		if (in->unarithm.operand->result == &builtin_type_error) {
+		if (in->unarithm.operand->result == &builtin_type_invalid) {
 			out->type = EXPR_LITERAL;
-			out->result = &builtin_type_error;
+			out->result = &builtin_type_invalid;
 			out->literal.uval = 0;
 			return true;
 		}
-		if (in->unarithm.operand->type != EXPR_ACCESS) {
-			return false;
-		}
-		const struct expression_access *access =
-			&in->unarithm.operand->access;
-		struct expression new_in = {0};
-		const struct type *operand_type;
-		switch (access->type) {
-		case ACCESS_IDENTIFIER:
-			if (access->object->otype != O_DECL) {
-				return false;
-			}
-			out->literal.object = access->object;
-			out->literal.ival = 0;
-			return true;
-		case ACCESS_INDEX:
-			new_in = *in;
-			new_in.unarithm.operand = access->array;
-			if (!eval_expr(ctx, &new_in, out)) {
-				return false;
-			}
-			struct expression index = {0};
-			if (!eval_expr(ctx, access->index, &index)) {
-				return false;
-			}
-			operand_type = type_dealias(ctx, access->array->result);
-			if (operand_type->storage != STORAGE_ARRAY) {
-				// autodereferencing not allowed
-				return false;
-			}
-			out->literal.ival +=
-				index.literal.uval * operand_type->array.members->size;
-			return true;
-		case ACCESS_FIELD:
-			new_in = *in;
-			new_in.unarithm.operand = access->_struct;
-			if (!eval_expr(ctx, &new_in, out)) {
-				return false;
-			}
-			operand_type = type_dealias(ctx, access->tuple->result);
-			if (operand_type->storage != STORAGE_STRUCT) {
-				// autodereferencing not allowed
-				return false;
-			}
-			out->literal.ival += access->field->offset;
-			return true;
-		case ACCESS_TUPLE:
-			new_in = *in;
-			new_in.unarithm.operand = access->tuple;
-			if (!eval_expr(ctx, &new_in, out)) {
-				return false;
-			}
-			operand_type = type_dealias(ctx, access->tuple->result);
-			if (operand_type->storage != STORAGE_TUPLE) {
-				// autodereferencing not allowed
-				return false;
-			}
-			out->literal.ival += access->tvalue->offset;
-			return true;
+		switch (in->unarithm.operand->type) {
+		case EXPR_ACCESS:
+			return eval_address_object(ctx, in, out);
+		default:
+			return eval_address_other(ctx, in, out);
 		}
 	}
 
@@ -1175,7 +1252,7 @@ eval_expr(struct context *ctx,
 		case C_TEST:
 			return eval_type_test(ctx, in, out);
 		default:
-			assert(0); // Unreacheable
+			assert(0); // Unreachable
 		}
 	case EXPR_LEN:
 		return eval_len(ctx, in, out);
@@ -1189,6 +1266,10 @@ eval_expr(struct context *ctx,
 		return eval_tuple(ctx, in, out);
 	case EXPR_UNARITHM:
 		return eval_unarithm(ctx, in, out);
+	case EXPR_UNDEFINED:
+		out->type = EXPR_UNDEFINED;
+		out->result = &builtin_type_undefined;
+		return true;
 	case EXPR_ALLOC:
 	case EXPR_APPEND:
 	case EXPR_ASSERT:

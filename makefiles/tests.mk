@@ -1,18 +1,4 @@
 TDENV = env HARE_TD_rt=$(HARECACHE)/rt.td HARE_TD_testmod=$(HARECACHE)/testmod.td
-test_objects = $(patsubst %,$(HARECACHE)/%,\
-	src/lex.o \
-	src/parse.o \
-	src/type_store.o \
-	src/scope.o \
-	src/identifier.o \
-	src/util.o \
-	src/types.o \
-	src/check.o \
-	src/utf8.o \
-	src/eval.o \
-	src/expr.o \
-	src/typedef.o \
-	src/mod.o)
 
 testmod_ha = testmod/measurement.ha testmod/testmod.ha
 $(HARECACHE)/testmod.ssa: $(testmod_ha) $(HARECACHE)/rt.td $(BINOUT)/harec
@@ -44,7 +30,7 @@ $(HARECACHE)/rt.o: $(rt_s)
 
 ha_tests = $(patsubst %.ha,%,$(shell ls tests/*-*.ha))
 # ha_tests =
-tests = $(patsubst %,$(HARECACHE)/%,$(sort tests/30-reduction $(ha_tests)))
+tests = $(patsubst %,$(HARECACHE)/%,$(sort $(ha_tests)))
 
 
 tests: $(tests)
@@ -70,13 +56,3 @@ $(HARECACHE)/tests/10-binarithms.ssa: 	$(HARECACHE)/testmod.td
 $(HARECACHE)/tests/15-enums.ssa: 		$(HARECACHE)/testmod.td
 $(HARECACHE)/tests/24-imports.ssa: 		$(HARECACHE)/testmod.td
 $(HARECACHE)/tests/34-declarations.ssa: $(HARECACHE)/testmod.td
-
-
-$(HARECACHE)/tests/30-reduction.o: tests/30-reduction.c
-	@mkdir -p -- $(HARECACHE)/tests
-	@printf '%-20s :[CC]> .o' $(notdir $<)
-	@$(CC) -c $(CFLAGS) $(C_DEFINES) -o $@ $<
-
-$(HARECACHE)/tests/30-reduction: $(HARECACHE)/tests/30-reduction.o $(test_objects)
-	@printf ' :[CCLD]> %s\n' $(notdir $@)
-	@$(CC) $(LDFLAGS) $(LIBS) -o $@ $^

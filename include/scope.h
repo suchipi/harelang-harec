@@ -22,13 +22,16 @@ struct scope_object {
 	enum object_type otype;
 	// name is the name of the object within this scope (for lookups)
 	// ident is the global identifier (these may be different in some cases)
-	struct identifier name, ident;
+	struct ident *name;
+	struct ident *ident;
 	enum scope_object_flags flags;
 
 	union {
 		const struct type *type;
 		struct expression *value; // For O_CONST
 	};
+	 // Cannot be in union because type and idecl are needed at the same time
+	struct incomplete_decl *idecl;
 
 	struct scope_object *lnext; // Linked list
 	struct scope_object *mnext; // Hash map
@@ -46,21 +49,18 @@ enum scope_class {
 	SCOPE_DEFINES,
 };
 
-struct yield {
+struct yield { // and break
 	struct expression **expression;
 	struct yield *next;
 };
 
 struct scope {
-	// Used for for loops
-	bool has_break;
-
 	enum scope_class class;
 	const char *label;
 	struct scope *parent;
 
 	const struct type *hint;
-	struct type_tagged_union *results;
+	struct type_tagged_union results;
 	struct yield *yields;
 
 	// Linked list in insertion order
@@ -87,18 +87,10 @@ struct scope *scope_lookup_label(struct scope *scope, const char *label);
 void scope_free(struct scope *scope);
 void scope_free_all(struct scopes *scopes);
 
-void scope_object_init(struct scope_object *obj, enum object_type otype,
-	const struct identifier *ident, const struct identifier *name,
+struct scope_object *scope_insert(struct scope *scope,
+	enum object_type otype, struct ident *ident, struct ident *name,
 	const struct type *type, struct expression *value);
 
-void scope_insert_from_object(struct scope *scope, struct scope_object *object);
-
-struct scope_object *scope_insert(
-	struct scope *scope, enum object_type otype,
-	const struct identifier *ident, const struct identifier *name,
-	const struct type *type, struct expression *value);
-
-struct scope_object *scope_lookup(struct scope *scope,
-	const struct identifier *ident);
+struct scope_object *scope_lookup(struct scope *scope, struct ident *ident);
 
 #endif

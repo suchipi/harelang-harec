@@ -40,6 +40,17 @@ fn neg() void = {
 	assert(a == 0 - 2);
 	let b = 1-1;
 	assert(b == 0);
+	static assert(-2u8 == 0xfeu8);
+};
+
+fn bnot() void = {
+	assert(~0 == -1);
+	assert(~0u8 == 0xffu8);
+	assert(~0b01010011i == 0b10101100i8);
+
+	static assert(~0 == -1);
+	static assert(~0u8 == 0xffu8);
+	static assert(~0b01010011i == 0b10101100i8);
 };
 
 fn deref() void = {
@@ -59,5 +70,6 @@ export fn main() void = {
 	lnot();
 	addr();
 	neg();
+	bnot();
 	deref();
 };

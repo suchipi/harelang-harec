@@ -1,12 +1,27 @@
 use rt::{compile, status};
 
 type err_int = !int;
+type err_recur = !*err_recur;
 
 fn assignability() void = {
 	// Error and non-error types are interchangable:
 	let a: !int = 10;
 	let b: int = a;
 	assert(a == b);
+
+	compile(status::CHECK, `
+		type err = !void;
+
+		fn reterr() (int | err) = {
+			return err;
+		};
+
+		fn properr() void = {
+			reterr()?;
+		};
+
+		export fn main() void = void;
+	`)!; // error types cannot be assigned to void
 };
 
 type error = !void;
@@ -32,40 +47,47 @@ fn cannotignore() void = {
 	compile(status::CHECK, "
 		type error = !void;
 
-		export fn main() int = {
+		export fn main() void = {
 			error;
-			return 42;
+		};
+	")!;
+	compile(status::CHECK, "
+		type error = !int;
+
+		export fn main() void = {
+			let x: error = 0;
+			x;
+		};
+	")!;
+	compile(status::CHECK, "
+		type error = !int;
+
+		export fn main() void = {
+			let x: (error | void) = void;
+			x;
 		};
 	")!;
 	err_if_false(true)!;
 };
 
-fn void_assignability() void = {
-	compile(status::CHECK, `
-		type err = !void;
+fn discard() void = {
+	let x: error = error;
+	let x: (int | error) = error;
+	let x = err_if_false(false);
+	x = error;
+	x = err_if_false(false);
 
-		fn reterr() (int | err) = {
-			return err;
-		};
+	// XXX: type inference currently doesn't work because of the temporary
+	// fix for https://todo.sr.ht/~sircmpwn/hare/951. once that ticket is
+	// actually fixed, the explicit type here can be removed
+	let _: error = error;
+	let _ = err_if_false(false);
+	_ = error;
+	_ = err_if_false(false);
 
-		fn properr() void = {
-			reterr()?;
-		};
-
-		export fn main() void = void;
-	`)!; // error types cannot be assigned to void
-
-	compile(status::CHECK, `
-		fn disallow_1() void = {
-			return "I am illegal";
-		};
-
-		fn disallow_2() void = {
-			return 12;
-		};
-
-		export fn main() void = void;
-	`)!; // non-void types cannot be assigned to void
+	for (let x => done: (int | done | !void)) void;
+	for (let _ => done: (int | done | !void)) void;
+	compile(status::CHECK, `fn f() void = for (let x => done: (int | done | !void)) x;`)!;
 };
 
 fn measurements() void = {
@@ -91,10 +113,21 @@ fn measurements() void = {
 	assert(align(!*size) == align(*size));
 };
 
+type err_done_tagged_union = !(int | done);
+type done_tagged_union = (int | done);
+type err_done_tagged_union_alias = !done_tagged_union;
+
+fn disallowed_types() void = {
+	compile(status::CHECK, `type t = !done;`)!;
+	compile(status::CHECK, `type t = done; type u = t; type v = !u;`)!;
+	compile(status::CHECK, `fn f() !never;`)!;
+};
+
 export fn main() void = {
 	assignability();
 	propagate();
 	cannotignore();
-	void_assignability();
+	discard();
 	measurements();
+	disallowed_types();
 };

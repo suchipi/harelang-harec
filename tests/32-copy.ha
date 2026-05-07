@@ -1,3 +1,5 @@
+use rt;
+
 type coords = struct { x: i8, y: int, z: size };
 type anyint = struct { _8: i8, _16: i16, _32: i32, _64: i64 };
 
@@ -59,5 +61,11 @@ export fn main() void = {
 	assert(px.capacity == py.capacity);
 	assert(px.data == py.data);
 
-	// TODO: Slices
+	let x: []int = [1, 2, 3, 4];
+	let y = x;
+	let px = &x: *rt::slice;
+	let py = &y: *rt::slice;
+	assert(px.data == py.data);
+	assert(px.length == py.length);
+	assert(px.capacity == py.capacity);
 };

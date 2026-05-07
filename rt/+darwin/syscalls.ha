@@ -1,19 +1,21 @@
-fn syscall0(u64) u64;
-fn syscall1(u64, u64) u64;
-fn syscall2(u64, u64, u64) u64;
-fn syscall3(u64, u64, u64, u64) u64;
-fn syscall4(u64, u64, u64, u64, u64) u64;
-fn syscall5(u64, u64, u64, u64, u64, u64) u64;
-fn syscall6(u64, u64, u64, u64, u64, u64, u64) u64;
+fn syscall0(_: u64) u64;
+fn syscall1(_: u64, _: u64) u64;
+fn syscall2(_: u64, _: u64, _: u64) u64;
+fn syscall3(_: u64, _: u64, _: u64, _: u64) u64;
+fn syscall4(_: u64, _: u64, _: u64, _: u64, _: u64) u64;
+fn syscall5(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64) u64;
+fn syscall6(_: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64) u64;
 
-fn sys_pipe(u64, u64) u64;
-fn sys_fork(u64) u64;
+fn sys_pipe(_: u64, _: u64) u64;
+fn sys_fork(_: u64) u64;
 
 export fn write(fd: int, buf: *const opaque, count: size) size =
 	syscall3(SYS_write, fd: u64, buf: uintptr: u64, count: u64): size;
 
 // export fn close(fd: int) int = syscall1(SYS_close, fd: u64): int;
-export fn close(fd: int) void = syscall1(SYS_close, fd: u64): void;
+export fn close(fd: int) void = {
+	syscall1(SYS_close, fd: u64);
+};
 
 export fn dup2(old: int, new: int) int =
 	syscall2(SYS_dup2,  old: u64, new: u64): int;
@@ -91,6 +93,18 @@ export fn mmap(
 
 export fn munmap(addr: *opaque, length: size) int =
 	syscall2(SYS_munmap, addr: uintptr: u64, length: u64): int;
+
+export fn sysctl(
+	name: *i32,
+	namelen: u32,
+	oldp: nullable *opaque,
+	oldlenp: nullable *size,
+	newp: nullable *opaque,
+	newlen: size,
+) int = syscall6(SYS_sysctl,
+	name: uintptr: u64, namelen: u64,
+	oldp: uintptr: u64, oldlenp: uintptr: u64,
+	newp: uintptr: u64, newlen: u64): int;
 
 export def SIGABRT: int	= 6;
 export def SIGCHLD: int	= 20;

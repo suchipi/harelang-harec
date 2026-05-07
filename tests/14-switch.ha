@@ -3,8 +3,6 @@ use rt::{compile, status, toutf8};
 type t = int;
 type e = !int;
 
-let x = 1337;
-
 fn basics() void = {
 	let cases = [[0, 1], [1, 3], [10, 20], [11, 21], [12, 22], [13, 13]];
 	for (let i = 0z; i < len(cases); i += 1) {
@@ -31,16 +29,6 @@ fn basics() void = {
 		abort();
 	};
 	assert(result);
-
-	let y = &x;
-	switch (y) {
-	case &x => void;
-	case => abort();
-	};
-	switch (y: *uint) {
-	case &x: *uint => void;
-	case => abort();
-	};
 
 	// assignability
 	switch (0) {
@@ -76,10 +64,12 @@ fn basics() void = {
 	")!;
 
 	compile(status::CHECK, "
-		fn test() void = switch (&0) {
-		case &0 => void;
-		case => void;
-		};
+		fn test() void = switch (&x) { case => void; };
+	")!;
+
+	compile(status::CHECK, "
+		let x = 0;
+		fn test() void = switch (null) { case => void; };
 	")!;
 
 	compile(status::CHECK, "
@@ -88,6 +78,28 @@ fn basics() void = {
 		case => void;
 		};
 	")!;
+
+	compile(status::SUCCESS, `
+		type alias = str;
+		fn test() void = switch ("asdf") {
+		case "fdsa": alias => void;
+		case => void;
+		};
+	`)!;
+	compile(status::SUCCESS, `
+		type alias = str;
+		fn test() void = switch ("asdf": alias) {
+		case "fdsa" => void;
+		case => void;
+		};
+	`)!;
+	compile(status::SUCCESS, `
+		type alias = str;
+		fn test() void = switch ("asdf": alias) {
+		case "fdsa": alias => void;
+		case => void;
+		};
+	`)!;
 };
 
 fn tagged_result() void = {
@@ -146,26 +158,26 @@ fn exhaustivity() void = {
 
 	let buf: [4096]u8 = [0...];
 	let buf = buf[..0];
-	static append(buf, toutf8("fn test() void = switch (0u8) {")...);
+	static append(buf, toutf8("fn test() void = switch (0u8) {")...)!;
 	for :outer (let i: u8 = '0'; i <= '2'; i += 1) {
 		for (let j: u8 = '0'; j <= '9'; j += 1) {
 			for (let k: u8 = '0'; k <= '9'; k += 1) {
 				if (i == '2' && j == '5' && k == '6') {
 					break :outer;
 				};
-				static append(buf, toutf8("case ")...);
+				static append(buf, toutf8("case ")...)!;
 				if (i != '0') {
-					static append(buf, i);
+					static append(buf, i)!;
 				};
 				if (i != '0' || j != '0') {
-					static append(buf, j);
+					static append(buf, j)!;
 				};
-				static append(buf, k);
-				static append(buf, toutf8("=> void;")...);
+				static append(buf, k)!;
+				static append(buf, toutf8("=> void;")...)!;
 			};
 		};
 	};
-	static append(buf, toutf8("};")...);
+	static append(buf, toutf8("};")...)!;
 	compile(status::SUCCESS, *(&buf: *str))!;
 
 	compile(status::CHECK, "
@@ -202,35 +214,6 @@ fn duplicates() void = {
 	")!;
 
 	compile(status::CHECK, "
-		let x = 0;
-		fn test() void = switch (&x) {
-		case &x => void;
-		case &x => void;
-		case => void;
-		};
-	")!;
-
-	compile(status::CHECK, "
-		let x = ([1, 2, 3, 4], 5);
-		fn test() void = switch (&0) {
-		case &(x.0: [*]int)[4] => void;
-		case &x.1 => void;
-		case => void;
-		};
-	")!;
-
-	// TODO: uncomment this once translation-time unions actually work
-	//compile(status::CHECK, "
-	//	type t = union { x: [2]int, y: (int, int) };
-	//	let x = t { ... };
-	//	fn test() void = switch (&0) {
-	//	case &x.x[1] => void;
-	//	case &x.y.1 => void;
-	//	case => void;
-	//	};
-	//")!;
-
-	compile(status::CHECK, "
 		type x = enum { A, B, C = B };
 		fn test() void = switch (x::A) {
 		case x::A => void;
@@ -238,6 +221,11 @@ fn duplicates() void = {
 		case x::C => void;
 		};
 	")!;
+};
+
+// make sure this compiles and also passes through QBE successfully
+fn f() int = switch (0) {
+case => abort();
 };
 
 fn label() void = {

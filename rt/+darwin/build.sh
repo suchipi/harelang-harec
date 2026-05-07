@@ -3,6 +3,8 @@
 # man 3 sysexits: <sysexits.h>
 EX_USAGE=64
 
+: ${HARECACHE:=.cache}
+
 # -------------------------------- ARCH --------------------------------
 
 function dict() {

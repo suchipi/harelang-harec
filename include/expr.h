@@ -38,6 +38,7 @@ enum expr_type {
 	EXPR_SWITCH,
 	EXPR_TUPLE,
 	EXPR_UNARITHM,
+	EXPR_UNDEFINED,
 	EXPR_VAARG,
 	EXPR_VAEND,
 	EXPR_VASTART,
@@ -86,6 +87,7 @@ enum alloc_kind {
 
 struct expression_alloc {
 	enum alloc_kind kind;
+	const struct type *allocation_result;
 	struct expression *init;
 	struct expression *cap;
 };
@@ -100,12 +102,10 @@ struct expression_append {
 enum fixed_aborts {
 	ABORT_OOB = 0,
 	ABORT_TYPE_ASSERTION = 1,
-	ABORT_ALLOC_FAILURE = 2,
-	ABORT_STATIC_EXCEEDED = 3,
-	ABORT_UNREACHABLE = 4,
-	ABORT_CAP_TOO_SMALL = 5,
-	ABORT_ANON_ASSERTION_FAILED = 6,
-	ABORT_PROPAGATE_ERROR_OCCURRED = 7,
+	ABORT_UNREACHABLE = 2,
+	ABORT_CAP_TOO_SMALL = 3,
+	ABORT_ANON_ASSERTION_FAILED = 4,
+	ABORT_PROPAGATE_ERROR_OCCURRED = 5,
 };
 
 struct expression_assert {
@@ -184,7 +184,7 @@ struct expression_call {
 };
 
 struct expression_compound {
-	char *label;
+	const char *label;
 	struct scope *scope;
 	struct expressions exprs;
 };
@@ -244,9 +244,9 @@ struct expression_literal {
 };
 
 struct expression_control {
-	char *label;
+	const char *label;
 	const struct scope *scope;
-	struct expression *value; // Only set for yield
+	struct expression *value; // Only set for yield and break
 };
 
 struct expression_defer {
@@ -268,12 +268,13 @@ enum for_kind {
 
 struct expression_for {
 	enum for_kind kind;
-	char *label;
+	const char *label;
 	struct scope *scope;
 	struct expression *bindings;
 	struct expression *cond;
 	struct expression *afterthought;
 	struct expression *body;
+	struct expression *else_branch;
 };
 
 struct expression_free {
@@ -335,7 +336,7 @@ struct expr_struct_field {
 
 struct expression_struct {
 	struct expr_struct_field *fields;
-	bool autofill;
+	bool autofill, undefined;
 };
 
 struct expression_tuple {
@@ -396,5 +397,6 @@ struct expression {
 };
 
 uint32_t expr_hash(const struct expression *expr);
+bool expr_equal(const struct expression *a, const struct expression *b);
 
 #endif

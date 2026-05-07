@@ -15,13 +15,13 @@ tagged_qtype(struct gen_context *ctx,
 
 	// Identify maximum alignment among members
 	size_t maxalign = 0, minalign = SIZE_MAX;
-	for (const struct type_tagged_union *tu = &type->tagged;
-			tu; tu = tu->next) {
-		if (maxalign < tu->type->align) {
-			maxalign = tu->type->align;
+	for (size_t i = 0; i < type->tagged.len; i++) {
+		const struct type *t = type->tagged.types[i];
+		if (maxalign < t->align) {
+			maxalign = t->align;
 		}
-		if (minalign > tu->type->align) {
-			minalign = tu->type->align;
+		if (minalign > t->align) {
+			minalign = t->align;
 		}
 	}
 
@@ -29,9 +29,9 @@ tagged_qtype(struct gen_context *ctx,
 	struct qbe_field *field = &def->type.fields;
 	for (size_t align = 1; align <= 8; align <<= 1) {
 		size_t nalign = 0;
-		for (const struct type_tagged_union *tu = &type->tagged;
-				tu; tu = tu->next) {
-			if (tu->type->align != align || tu->type->size == 0) {
+		for (size_t i = 0; i < type->tagged.len; i++) {
+			const struct type *t = type->tagged.types[i];
+			if (t->align != align || t->size == 0) {
 				continue;
 			}
 			++nalign;
@@ -57,18 +57,18 @@ tagged_qtype(struct gen_context *ctx,
 		values->exported = false;
 		values->type.stype = Q__UNION;
 		values->type.base = NULL;
-		values->type.name = values->name;
+		values->type.name = xstrdup(values->name);
 		values->type.size = type->size - type->align;
 
 		size_t nfield = 0;
 		struct qbe_field *bfield = &values->type.fields;
-		for (const struct type_tagged_union *tu = &type->tagged;
-				tu; tu = tu->next) {
-			if (tu->type->align != align || tu->type->size == 0) {
+		for (size_t i = 0; i < type->tagged.len; i++) {
+			const struct type *t = type->tagged.types[i];
+			if (t->align != align || t->size == 0) {
 				continue;
 			}
 
-			bfield->type = qtype_lookup(ctx, tu->type, true);
+			bfield->type = qtype_lookup(ctx, t, true);
 			bfield->count = 1;
 			if (++nfield < nalign) {
 				bfield->next = xcalloc(1, sizeof(struct qbe_field));
@@ -94,7 +94,7 @@ tagged_qtype(struct gen_context *ctx,
 		batch->exported = false;
 		batch->type.stype = Q__AGGREGATE;
 		batch->type.base = NULL;
-		batch->type.name = batch->name;
+		batch->type.name = xstrdup(batch->name);
 		batch->type.size = type->size - type->align;
 
 		bfield = &batch->type.fields;
@@ -142,19 +142,22 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	def->name = gen_name(&ctx->id, "type.%d");
 	def->type.stype = Q__AGGREGATE;
 	def->type.base = type;
-	def->type.name = def->name;
-
-	const struct type *final = type_dealias(NULL, type);
-	assert((final->storage == STORAGE_STRUCT && final->struct_union.packed)
-			|| type->size == SIZE_UNDEFINED
-			|| type->size == 0
-			|| type->size % type->align == 0);
+	def->type.name = xstrdup(def->name);
 
 	struct qbe_field *field = &def->type.fields;
+	if (type->size == SIZE_UNDEFINED
+			|| type->size == 0
+			|| type->size % type->align != 0) {
+		/* Not straightforwardly compatible with the C ABI */
+		field->type = NULL;
+		field->count = type->size;
+		qbe_append_def(ctx->out, def);
+		return &def->type;
+	}
+
 	switch (type->storage) {
 	case STORAGE_ARRAY:
 		if (type->array.length == SIZE_UNDEFINED) {
-			free(def->name);
 			free(def);
 			return &qbe_long; // Special case
 		}
@@ -177,11 +180,6 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 		def->type.stype = Q__UNION;
 		// fallthrough
 	case STORAGE_STRUCT:
-		if (!type->struct_union.c_compat) {
-			field->type = NULL;
-			field->count = type->size;
-			break;
-		}
 		for (struct struct_field *tfield = type->struct_union.fields;
 				tfield; tfield = tfield->next) {
 			if (tfield->type->size != 0) {
@@ -214,14 +212,16 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	case STORAGE_TAGGED:
 		tagged_qtype(ctx, type, def);
 		break;
+	case STORAGE_DONE:
 	case STORAGE_ENUM:
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_ALIAS:
 	case STORAGE_I8:
 	case STORAGE_U8:
 	case STORAGE_I16:
 	case STORAGE_U16:
 	case STORAGE_BOOL:
+	case STORAGE_ERROR:
 	case STORAGE_I32:
 	case STORAGE_U32:
 	case STORAGE_RCONST:
@@ -240,10 +240,11 @@ aggregate_lookup(struct gen_context *ctx, const struct type *type)
 	case STORAGE_FCONST:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 	case STORAGE_FUNCTION:
 	case STORAGE_OPAQUE:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
+	case STORAGE_UNDEFINED:
 		abort(); // Invariant
 	}
 
@@ -256,13 +257,15 @@ qtype_lookup(struct gen_context *ctx,
 		const struct type *type,
 		bool xtype) {
 	switch (type->storage) {
-	case STORAGE_U8:
 	case STORAGE_I8:
+		return xtype ? &qbe_sbyte : &qbe_word;
+	case STORAGE_U8:
 	case STORAGE_BOOL:
-		return xtype ? &qbe_byte : &qbe_word;
+		return xtype ? &qbe_ubyte : &qbe_word;
 	case STORAGE_I16:
+		return xtype ? &qbe_shalf : &qbe_word;
 	case STORAGE_U16:
-		return xtype ? &qbe_half : &qbe_word;
+		return xtype ? &qbe_uhalf : &qbe_word;
 	case STORAGE_I32:
 	case STORAGE_U32:
 	case STORAGE_INT:
@@ -285,6 +288,8 @@ qtype_lookup(struct gen_context *ctx,
 	case STORAGE_ENUM:
 	case STORAGE_ALIAS:
 		return qtype_lookup(ctx, type->alias.type, xtype);
+	case STORAGE_ERROR:
+		return qtype_lookup(ctx, type->error, xtype);
 	case STORAGE_ARRAY:
 	case STORAGE_SLICE:
 	case STORAGE_STRING:
@@ -297,11 +302,13 @@ qtype_lookup(struct gen_context *ctx,
 		return ctx->arch.ptr;
 	case STORAGE_VALIST:
 		return ctx->arch.ptr;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_VOID:
 	case STORAGE_DONE:
+	case STORAGE_UNDEFINED:
 		abort(); // Invariant
 	case STORAGE_FCONST:
 	case STORAGE_ICONST:
@@ -316,6 +323,7 @@ type_is_aggregate(const struct type *type)
 {
 	switch (type->storage) {
 	case STORAGE_BOOL:
+	case STORAGE_DONE:
 	case STORAGE_ENUM:
 	case STORAGE_F32:
 	case STORAGE_F64:
@@ -325,6 +333,7 @@ type_is_aggregate(const struct type *type)
 	case STORAGE_I8:
 	case STORAGE_INT:
 	case STORAGE_POINTER:
+	case STORAGE_NOMEM:
 	case STORAGE_NULL:
 	case STORAGE_RUNE:
 	case STORAGE_SIZE:
@@ -335,13 +344,15 @@ type_is_aggregate(const struct type *type)
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
+	case STORAGE_UNDEFINED:
 		return false;
 	case STORAGE_FUNCTION:
 		// Special case
 		return false;
 	case STORAGE_ALIAS:
 		return type_is_aggregate(type->alias.type);
+	case STORAGE_ERROR:
+		return type_is_aggregate(type->error);
 	case STORAGE_ARRAY:
 	case STORAGE_SLICE:
 	case STORAGE_STRING:
@@ -356,7 +367,7 @@ type_is_aggregate(const struct type *type)
 	case STORAGE_RCONST:
 		lower_flexible(NULL, type, NULL);
 		return false;
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_NEVER:
 	case STORAGE_OPAQUE:
 		assert(0); // Invariant

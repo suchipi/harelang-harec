@@ -12,7 +12,8 @@ type nh = struct {
 	field: int,
 };
 
-let x: int = 42, y: int = 69;
+let x: int = 42;
+let y: int = 69;
 
 let v0: void = void;
 let v1 = void;
@@ -25,8 +26,8 @@ def V2: [0]int = [];
 def V3 = (void, void);
 def V4 = struct { v: void = void };
 
-def u32_tag = 1906196061;
-def u64_tag = 1268499444;
+def u32_tag = 336360636;
+def u64_tag = 386693493;
 
 fn write() void = {
 	assert(x == 42 && y == 69);
@@ -97,6 +98,8 @@ fn storage() void = {
 	assert(double == 1234.5678);
 };
 
+let undef: int = @undefined;
+
 fn invalid() void = {
 	compile(status::CHECK, "fn test() int; let x: int = test();")!;
 	compile(status::CHECK, "const a: u8 = 2; const b: u8 = a + 5;")!;
@@ -115,6 +118,9 @@ fn invalid() void = {
 
 	compile(status::CHECK, "let a = [];")!;
 	compile(status::CHECK, "def a = [];")!;
+
+	// Undefined value without type
+	compile(status::CHECK, "let a = @undefined;")!;
 };
 
 fn counter() int = {
@@ -137,12 +143,16 @@ const ptr: *u32 = &val;
 const ptr_arr: *int = &arr[1];
 const ptr_struct = &_struct.y;
 const ptr_tup: *str = &tup.1;
+const ptr_literal = struct {
+	x: *u32 = &1234u32,
+};
 
 fn pointers() void = {
 	assert(ptr == &val && *ptr == val);
 	assert(ptr_arr == &arr[1] && *ptr_arr == 2);
 	assert(ptr_struct == &_struct.y && *ptr_struct == 2);
 	assert(ptr_tup == &tup.1 && *ptr_tup == "asdf");
+	assert(*ptr_literal.x == 1234);
 
 	compile(status::CHECK, "let a = [1, 2, 3]; let b = &a[3];")!;
 	compile(status::CHECK, "let a = (1, 2, 3); let b = &a.3;")!;
@@ -177,7 +187,7 @@ fn tagged() void = {
 
 	let t4 = &tagged4: *struct {
 		tag: u32,
-		@offset(4) union {
+		union {
 			_i32: i32,
 			_u32: u32,
 		},
@@ -185,24 +195,26 @@ fn tagged() void = {
 	assert(t4.tag == u32_tag); // u32 type ID
 	assert(t4._u32 == 10);
 
+	static assert(align(u32) == 4 && align(u64) == 8); // XXX
 	let t8 = &tagged8: *struct {
 		tag: u32,
-		@offset(4) union {
+		union {
 			_i32: i32,
 			_u32: u32,
 		},
-		@offset(8) _u64: u64,
+		_u64: u64,
 	};
 	assert(t8.tag == u32_tag); // u32 type ID
 	assert(t8._u32 == 10);
 
+	static assert(align(u32) == 4 && align(u64) == 8); // XXX
 	let t8 = &tagged8_u64: *struct {
 		tag: u32,
-		@offset(4) union {
+		union {
 			_i32: i32,
 			_u32: u32,
 		},
-		@offset(8) _u64: u64,
+		_u64: u64,
 	};
 	assert(t8.tag == u64_tag); // u64 type ID
 	assert(t8._u64 == 10);

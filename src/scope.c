@@ -7,7 +7,7 @@
 #include "util.h"
 
 static uint32_t
-name_hash(uint32_t init, const struct identifier *ident)
+name_hash(uint32_t init, const struct ident *ident)
 {
 	return fnv1a_s(init, ident->name);
 }
@@ -17,6 +17,7 @@ scope_push(struct scope **stack, enum scope_class class)
 {
 	struct scope *new = xcalloc(1, sizeof(struct scope));
 	new->class = class;
+	new->results.types = NULL;
 	new->next = &new->objects;
 	new->parent = *stack;
 	*stack = new;
@@ -84,59 +85,46 @@ scope_free_all(struct scopes *scopes)
 	}
 }
 
-void
-scope_object_init(struct scope_object *object, enum object_type otype,
-	const struct identifier *ident, const struct identifier *name,
-	const struct type *type, struct expression *value)
+struct scope_object *
+scope_insert(struct scope *scope, enum object_type otype,
+	struct ident *ident, struct ident *name, const struct type *type,
+	struct expression *value)
 {
-	identifier_dup(&object->ident, ident);
-	identifier_dup(&object->name, name);
-	object->otype = otype;
+	assert(otype == O_SCAN || !type != !value);
+	struct scope_object *obj = xcalloc(1, sizeof(struct scope_object));
+	obj->ident = ident;
+	obj->name = name;
+	obj->otype = otype;
 	if (type) {
-		object->type = type;
+		obj->type = type;
 	} else if (value) {
-		object->value = value;
+		obj->value = value;
 		assert(otype == O_CONST);
 		assert(value->type == EXPR_LITERAL);
 	}
-	flexible_refer(type, &object->type);
-}
+	flexible_refer(type, &obj->type);
 
-void
-scope_insert_from_object(struct scope *scope, struct scope_object *object)
-{
 	// Linked list
-	*scope->next = object;
-	scope->next = &object->lnext;
+	*scope->next = obj;
+	scope->next = &obj->lnext;
 
 	// Hash map
-	uint32_t hash = name_hash(FNV1A_INIT, &object->name);
+	uint32_t hash = name_hash(FNV1A_INIT, obj->name);
 	struct scope_object **bucket = &scope->buckets[hash % SCOPE_BUCKETS];
 	if (*bucket) {
-		object->mnext = *bucket;
+		obj->mnext = *bucket;
 	}
-	*bucket = object;
+	*bucket = obj;
+	return obj;
 }
 
 struct scope_object *
-scope_insert(struct scope *scope, enum object_type otype,
-	const struct identifier *ident, const struct identifier *name,
-	const struct type *type, struct expression *value)
-{
-	assert(!type != !value);
-	struct scope_object *o = xcalloc(1, sizeof(struct scope_object));
-	scope_object_init(o, otype, ident, name, type, value);
-	scope_insert_from_object(scope, o);
-	return o;
-}
-
-struct scope_object *
-scope_lookup(struct scope *scope, const struct identifier *ident)
+scope_lookup(struct scope *scope, struct ident *ident)
 {
 	uint32_t hash = name_hash(FNV1A_INIT, ident);
 	struct scope_object *bucket = scope->buckets[hash % SCOPE_BUCKETS];
 	while (bucket) {
-		if (identifier_eq(&bucket->name, ident)) {
+		if (bucket->name == ident) {
 			return bucket;
 		}
 		bucket = bucket->mnext;

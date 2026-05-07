@@ -1,4 +1,5 @@
 #!/bin/sh
+: ${HARECACHE:=.cache}
 printf '\nRunning harec test suite at %s\n\n' "$(date)"
 start=$(date +"%s")
 

@@ -10,11 +10,11 @@ fn itos(i: int) str = {
 		return "-2147483648";
 	};
 	if (i < 0) {
-		static append(sl, '-');
+		static append(sl, '-')!;
 		i = -i;
 	};
 	for (i > 0) {
-		static append(sl, (i % 10): u8 + '0');
+		static append(sl, (i % 10): u8 + '0')!;
 		i /= 10;
 	};
 	for (let s = 0z, e = len(sl) - 1; s < e) {

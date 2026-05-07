@@ -4,16 +4,17 @@
 #include <stdio.h>
 #include "check.h"
 #include "eval.h"
+#include "identifier.h"
 #include "scope.h"
 #include "type_store.h"
 #include "types.h"
 #include "util.h"
 
-static struct dimensions lookup_atype_with_dimensions(struct context *ctx,
-		const struct type **type, const struct ast_type *atype);
-
-static const struct type *
-lookup_atype(struct context *ctx, const struct ast_type *atype);
+static struct dimensions
+dim_from_type(const struct type *type)
+{
+	return (struct dimensions){ .size = type->size, .align = type->align };
+}
 
 static size_t
 ast_array_len(struct context *ctx, const struct ast_type *atype)
@@ -47,8 +48,8 @@ builtin_type_for_storage(enum type_storage storage)
 	switch (storage) {
 	case STORAGE_BOOL:
 		return &builtin_type_bool;
-	case STORAGE_ERROR:
-		return &builtin_type_error;
+	case STORAGE_INVALID:
+		return &builtin_type_invalid;
 	case STORAGE_F32:
 		return &builtin_type_f32;
 	case STORAGE_F64:
@@ -65,6 +66,8 @@ builtin_type_for_storage(enum type_storage storage)
 		return &builtin_type_int;
 	case STORAGE_NEVER:
 		return &builtin_type_never;
+	case STORAGE_NOMEM:
+		return &builtin_type_nomem;
 	case STORAGE_OPAQUE:
 		return &builtin_type_opaque;
 	case STORAGE_RUNE:
@@ -93,8 +96,11 @@ builtin_type_for_storage(enum type_storage storage)
 		return &builtin_type_null;
 	case STORAGE_STRING:
 		return &builtin_type_str;
+	case STORAGE_UNDEFINED:
+		return &builtin_type_undefined;
 	case STORAGE_ALIAS:
 	case STORAGE_ARRAY:
+	case STORAGE_ERROR:
 	case STORAGE_FUNCTION:
 	case STORAGE_FCONST:
 	case STORAGE_ICONST:
@@ -114,9 +120,6 @@ builtin_type_for_storage(enum type_storage storage)
 static const struct type *
 builtin_for_type(const struct type *type)
 {
-	if (type->flags & TYPE_ERROR) {
-		return NULL;
-	}
 	return builtin_type_for_storage(type->storage);
 }
 
@@ -148,7 +151,8 @@ struct_new_field(struct context *ctx, struct type *type,
 	const struct ast_struct_union_field *afield,
 	size_t *offset, bool size_only)
 {
-	if (afield->name != NULL && !size_only) {
+	bool named = afield->name != NULL && strcmp(afield->name, "_") != 0;
+	if (named && !size_only) {
 		if (struct_union_has_field(ctx, afield->name, type->struct_union.fields)) {
 			error(ctx, afield->type->loc, NULL,
 				"Duplicate struct/union member '%s'",
@@ -159,13 +163,14 @@ struct_new_field(struct context *ctx, struct type *type,
 	struct struct_field *field = xcalloc(1, sizeof(struct struct_field));
 
 	if (afield->name && !size_only) {
-		field->name = xstrdup(afield->name);
+		field->name = afield->name;
 	}
 	struct dimensions dim = {0};
 	if (size_only) {
-		dim = lookup_atype_with_dimensions(ctx, NULL, afield->type);
+		dim = type_store_lookup_dimensions(ctx, afield->type);
 	} else {
-		dim = lookup_atype_with_dimensions(ctx, &field->type, afield->type);
+		field->type = type_store_lookup_atype(ctx, afield->type);
+		dim = dim_from_type(field->type);
 	}
 	if (afield->next != NULL && dim.size == SIZE_UNDEFINED) {
 		error(ctx, afield->type->loc, NULL,
@@ -182,10 +187,6 @@ struct_new_field(struct context *ctx, struct type *type,
 	field->size = dim.size;
 
 	if (type->storage == STORAGE_UNION) {
-		if (afield->offset) {
-			error(ctx, afield->type->loc, NULL,
-				"Union fields cannot be given explicit offset");
-		}
 		field->offset = 0;
 		if (dim.size == SIZE_UNDEFINED || type->size == SIZE_UNDEFINED) {
 			type->size = SIZE_UNDEFINED;
@@ -195,35 +196,7 @@ struct_new_field(struct context *ctx, struct type *type,
 		return field;
 	}
 
-	if (afield->offset) {
-		type->struct_union.c_compat = false;
-		bool err = true;
-		struct expression in, out;
-		check_expression(ctx, afield->offset, &in, NULL);
-		field->offset = *offset;
-		if (!eval_expr(ctx, &in, &out)) {
-			error(ctx, in.loc, NULL,
-				"Cannot evaluate field offset at compile time");
-		} else if (!type_is_integer(ctx, out.result)) {
-			error(ctx, in.loc, NULL,
-				"Field offset must be an integer");
-		} else if (type_is_signed(ctx, out.result) && out.literal.ival < 0) {
-			error(ctx, in.loc, NULL,
-				"Field offset must not be less than 0");
-		} else if (out.literal.uval < *offset) {
-			error(ctx, in.loc, NULL,
-				"Field offset must be greater than or equal to previous field's offset");
-		} else if (out.literal.uval < type->size) {
-			error(ctx, in.loc, NULL,
-				"Fields must not have overlapping storage");
-		} else {
-			err = false;
-			field->offset = *offset = (size_t)out.literal.uval;
-		}
-		if (err) {
-			return NULL;
-		}
-	} else if (type->struct_union.packed) {
+	if (type->struct_union.packed) {
 		field->offset = *offset = type->size;
 	} else {
 		*offset = type->size;
@@ -242,9 +215,10 @@ struct_new_field(struct context *ctx, struct type *type,
 	return field;
 }
 
-static const struct type *type_store_lookup_type(struct context *ctx, const struct type *type);
+static const struct type *type_store_lookup_type(struct context *ctx,
+		const struct type *type);
 
-bool
+static bool
 check_embedded_member(struct context *ctx,
 	const struct ast_struct_union_field *afield,
 	struct struct_field *member,
@@ -256,13 +230,16 @@ check_embedded_member(struct context *ctx,
 			&& dealiased->storage != STORAGE_UNION) {
 		error(ctx, afield->type->loc, NULL,
 			"Cannot embed non-struct non-union alias");
-		member->type = &builtin_type_error;
+		member->type = &builtin_type_invalid;
 		return false;
 	}
 
 	for (struct struct_field *field = dealiased->struct_union.fields;
 			field; field = field->next) {
 		if (field->name != NULL) {
+			if (strcmp(field->name, "_") == 0) {
+				continue;
+			}
 			if (struct_union_has_field(ctx, field->name, fields)) {
 				// XXX: the location could be better
 				error(ctx, afield->type->loc, NULL,
@@ -280,7 +257,7 @@ check_embedded_member(struct context *ctx,
 	return true;
 }
 
-void
+static void
 shift_fields(struct context *ctx,
 	const struct ast_struct_union_field *afield, struct struct_field *parent)
 {
@@ -296,10 +273,8 @@ shift_fields(struct context *ctx,
 		|| type->storage == STORAGE_UNION);
 	struct type new = {
 		.storage = type->storage,
-		.flags = type->flags,
 		.size = type->size,
 		.align = type->align,
-		.struct_union.c_compat = type->struct_union.c_compat,
 		.struct_union.packed = type->struct_union.packed,
 	};
 	struct struct_field **next = &new.struct_union.fields;
@@ -311,7 +286,7 @@ shift_fields(struct context *ctx,
 		new->type = field->type;
 		new->offset = parent->offset;
 		if (field->name) {
-			new->name = xstrdup(field->name);
+			new->name = field->name;
 		} else {
 			shift_fields(ctx, NULL, new);
 		}
@@ -329,13 +304,7 @@ struct_init_from_atype(struct context *ctx, struct type *type,
 	const struct ast_type *atype, bool size_only)
 {
 	// TODO: fields with size SIZE_UNDEFINED
-	if (type->storage == STORAGE_UNION && atype->struct_union.packed) {
-		error(ctx, atype->loc, NULL,
-				"Cannot use @packed attribute for union type");
-		return false;
-	}
 	type->struct_union.packed = atype->struct_union.packed;
-	type->struct_union.c_compat = !atype->struct_union.packed;
 
 	size_t offset = 0;
 	assert(type->storage == STORAGE_STRUCT || type->storage == STORAGE_UNION);
@@ -369,271 +338,177 @@ struct_init_from_atype(struct context *ctx, struct type *type,
 	return true;
 }
 
-static bool
-enforce_tagged_invariants(struct context *ctx, struct location loc,
-		const struct type *type)
-{
-	int i;
-	const struct type_tagged_union *tu;
-	for (i = 0, tu = &type->tagged; tu; i++, tu = tu->next) {
-		if (tu->type->storage == STORAGE_NULL) {
-			error(ctx, loc, NULL,
-				"Null type not allowed in this context");
-			return false;
-		}
-		if (tu->type->size == SIZE_UNDEFINED) {
-			error(ctx, loc, NULL,
-				"Type of undefined size is not a valid tagged union member");
-			return false;
-		}
-		assert(tu->type->align != ALIGN_UNDEFINED);
-	}
-	if (i <= 1) {
-		error(ctx, loc, NULL,
-			"Tagged unions must have at least two distinct members");
-		return false;
-	}
-	return true;
-}
-
-static size_t
-sum_tagged_memb(struct context *ctx,
-		const struct type_tagged_union *u)
-{
-	size_t nmemb = 0;
-	for (; u; u = u->next) {
-		const struct type *type = u->type;
-		if (type->storage == STORAGE_TAGGED) {
-			nmemb += sum_tagged_memb(ctx, &type->tagged);
-		} else {
-			++nmemb;
-		}
-	}
-	return nmemb;
-}
-
-// get next member of an incomplete tagged union without completing it
 static void
-tagged_or_atagged_member(struct context *ctx,
-		const struct ast_type **atype, const struct type **type)
+add_padding(size_t *size, size_t align)
 {
-	const struct ast_type *_atype = *atype;
-	while (_atype->storage == STORAGE_ALIAS && _atype->unwrap) {
-		const struct scope_object *obj = scope_lookup(
-			ctx->scope, &_atype->alias);
-		if (!obj) {
-			char *ident = identifier_unparse(&_atype->alias);
-			error(ctx, _atype->loc, NULL,
-				"Unknown object '%s'", ident);
-			free(ident);
-			*type = &builtin_type_error;
-			return;
+	if (*size != SIZE_UNDEFINED && *size != 0 && *size % align != 0) {
+		*size += align - *size % align;
+	}
+}
+
+static void
+size_with_tag(struct dimensions *out, struct dimensions new)
+{
+	if (new.size == SIZE_UNDEFINED || out->size == SIZE_UNDEFINED) {
+		out->size = SIZE_UNDEFINED;
+		out->align = ALIGN_UNDEFINED;
+		return;
+	}
+	assert(new.align != ALIGN_UNDEFINED && out->align != ALIGN_UNDEFINED);
+
+	size_t sz = new.size + builtin_type_u32.size;
+	size_t align = new.align;
+	if (align < builtin_type_u32.align) {
+		align = builtin_type_u32.align;
+	}
+	add_padding(&sz, align);
+
+	if (sz > out->size) {
+		out->size = sz;
+	}
+	if (align > out->align) {
+		out->align = align;
+	}
+}
+
+static struct dimensions
+tagged_size(struct context *ctx, const struct ast_tagged_union_type *atype)
+{
+	struct dimensions ret = { 0 };
+	assert(atype != NULL);
+	for (; atype; atype = atype->next) {
+		if (!atype->unwrap) {
+			size_with_tag(&ret,
+				type_store_lookup_dimensions(ctx, atype->type));
+			continue;
 		}
-		if (obj->otype != O_SCAN) {
-			if (obj->otype == O_TYPE) {
-				*type = type_dealias(ctx, obj->type);
-				return;
-			} else {
-				char *ident = identifier_unparse(&obj->ident);
-				error(ctx, _atype->loc, NULL,
-					"Object '%s' is not a type", ident);
-				free(ident);
-				*type = &builtin_type_error;
-				return;
+
+		const struct type *unwrapped =
+			type_store_lookup_atype(ctx, atype->type);
+		unwrapped = type_dealias(ctx, unwrapped);
+		if (unwrapped->storage != STORAGE_TAGGED) {
+			if (unwrapped->storage != STORAGE_INVALID) {
+				error(ctx, atype->type->loc, NULL,
+					"Can't reduce non-tagged-union type %s",
+					gen_typename(unwrapped));
 			}
+			return ret;
 		}
-		struct incomplete_declaration *idecl =
-			(struct incomplete_declaration *)obj;
-		if (idecl->type != IDECL_DECL
-				|| idecl->decl.decl_type != ADECL_TYPE) {
-			char *ident = identifier_unparse(&obj->ident);
-			error(ctx, _atype->loc, NULL,
-				"Object '%s' is not a type", ident);
-			free(ident);
-			*type = &builtin_type_error;
-			return;
-		}
-		_atype = idecl->decl.type.type;
-	}
-	*type = NULL;
-	*atype = _atype;
-}
 
-static size_t
-sum_atagged_memb(struct context *ctx, const struct ast_tagged_union_type *u)
-{
-	size_t nmemb = 0;
-	for (; u; u = u->next) {
-		const struct type *type = NULL;
-		const struct ast_type *atype = u->type;
-		tagged_or_atagged_member(ctx, &atype, &type);
-		if (type != NULL && type->storage == STORAGE_TAGGED) {
-			nmemb += sum_tagged_memb(ctx, &type->tagged);
-		} else if (atype->storage == STORAGE_TAGGED) {
-			nmemb += sum_atagged_memb(ctx, &atype->tagged);
-		} else {
-			++nmemb;
+		for (size_t i = 0; i < unwrapped->tagged.len; i++) {
+ 			const struct type *mtype = unwrapped->tagged.types[i];
+			size_with_tag(&ret, dim_from_type(mtype));
 		}
 	}
-	return nmemb;
-}
-
-static void
-collect_tagged_memb(struct context *ctx,
-		struct type_tagged_union **ta,
-		const struct type_tagged_union *src,
-		size_t *i)
-{
-	for (; src; src = src->next) {
-		const struct type *type = src->type;
-		if (type->storage == STORAGE_TAGGED) {
-			collect_tagged_memb(ctx, ta, &type->tagged, i);
-			continue;
-		}
-		struct type_tagged_union *tu;
-		ta[*i] = tu = xcalloc(1, sizeof(struct type_tagged_union));
-		tu->type = lower_flexible(ctx, type, NULL);
-		*i += 1;
-	}
-}
-
-static void
-collect_atagged_memb(struct context *ctx,
-		struct type_tagged_union **ta,
-		const struct ast_tagged_union_type *atu,
-		size_t *i)
-{
-	for (; atu; atu = atu->next) {
-		const struct type *type = lookup_atype(ctx, atu->type);
-		if (type->storage == STORAGE_TAGGED) {
-			collect_tagged_memb(ctx, ta, &type->tagged, i);
-			continue;
-		}
-		struct type_tagged_union *tu;
-		ta[*i] = tu = xcalloc(1, sizeof(struct type_tagged_union));
-		tu->type = lower_flexible(ctx, type, NULL);
-		*i += 1;
-	}
+	return ret;
 }
 
 static int
-tagged_cmp(const void *ptr_a, const void *ptr_b)
+tagged_cmp(const void *_a, const void *_b)
 {
-	const struct type_tagged_union **a =
-		(const struct type_tagged_union **)ptr_a;
-	const struct type_tagged_union **b =
-		(const struct type_tagged_union **)ptr_b;
-	return (*a)->type->id < (*b)->type->id ? -1
-		: (*a)->type->id > (*b)->type->id ? 1 : 0;
+	const struct type *a = *(const struct type **)_a;
+	const struct type *b = *(const struct type **)_b;
+	return a->id < b->id ? -1 : a->id > b->id ? 1 : 0;
 }
 
 static void
-tagged_init(struct type *type, struct type_tagged_union **tu, size_t nmemb)
+tagged_init(struct context *ctx, struct type *type,
+	struct location loc, bool valid)
 {
-	// Sort by ID
-	qsort(tu, nmemb, sizeof(tu[0]), tagged_cmp);
+	const struct type **membs = type->tagged.types;
 
-	// Prune duplicates
-	size_t nmemb_dedup = 1;
-	for (size_t i = 1; i < nmemb; ++i) {
-		if (tu[i]->type->id != tu[nmemb_dedup - 1]->type->id) {
-			tu[nmemb_dedup++] = tu[i];
-		}
-	}
-	nmemb = nmemb_dedup;
-
-	// First one free
-	type->tagged = *tu[0];
-	free(tu[0]);
-
-	type->size = type->tagged.type->size;
-	type->align = type->tagged.type->align;
-
-	struct type_tagged_union **next = &type->tagged.next;
-	for (size_t i = 1; i < nmemb; ++i) {
-		if (tu[i]->type->size > type->size) {
-			type->size = tu[i]->type->size;
-		}
-		if (tu[i]->type->align > type->align) {
-			type->align = tu[i]->type->align;
-		}
-		*next = tu[i];
-		next = &tu[i]->next;
+	// Lower flexible constants
+	// TODO: Don't do this if !valid, and handle flexible literals properly
+	// in result type reduction
+	for (size_t i = 0; i < type->tagged.len; i++) {
+		membs[i] = lower_flexible(ctx, membs[i], NULL);
 	}
 
-	if (type->align < builtin_type_u32.align) {
-		type->align = builtin_type_u32.align;
+	// Then sort by ID
+	qsort(membs, type->tagged.len, sizeof(membs[0]), tagged_cmp);
+
+	// Then deduplicate and enforce validity
+	size_t dedup_len = 1;
+	bool invalid = false;
+	for (size_t i = 1; i < type->tagged.len; i++) {
+		if (membs[i]->id != membs[i - 1]->id) {
+			membs[dedup_len++] = membs[i];
+		} else if (!type_equal(membs[i], membs[i - 1])) {
+			char *first_name = gen_typename(membs[i - 1]);
+			char *second_name = gen_typename(membs[i]);
+			error(ctx, loc, NULL, "Hash collision between %s and %s",
+				first_name, second_name);
+		}
+		if (membs[i]->storage == STORAGE_NULL && valid) {
+			error(ctx, loc, NULL,
+				"Null type not allowed in this context");
+			invalid = true;
+		}
+		if (membs[i]->size == SIZE_UNDEFINED && valid) {
+			error(ctx, loc, NULL,
+				"Type of undefined size is not a valid tagged union member");
+			invalid = true;
+		}
+		assert(membs[i]->align != ALIGN_UNDEFINED || invalid || !valid);
 	}
-	type->size += builtin_type_u32.size % type->align
-		+ builtin_type_u32.align;
+	if (dedup_len < type->tagged.len) {
+		type->tagged.len = dedup_len;
+	}
+
+	if (invalid) {
+		*type = builtin_type_invalid;
+		return;
+	}
+
+	struct dimensions dims = {0};
+	size_with_tag(&dims, dim_from_type(&builtin_type_void));
+	for (size_t i = 0; i < type->tagged.len; i++) {
+		size_with_tag(&dims, dim_from_type(membs[i]));
+	}
+	type->size = dims.size;
+	type->align = dims.align;
 }
 
 static void
 tagged_init_from_atype(struct context *ctx,
 	struct type *type, const struct ast_type *atype)
 {
-	size_t nmemb = sum_atagged_memb(ctx, &atype->tagged);
-	struct type_tagged_union **tu =
-		xcalloc(nmemb, sizeof(struct type_tagged_union *));
-	size_t i = 0;
-	collect_atagged_memb(ctx, tu, &atype->tagged, &i);
-	tagged_init(type, tu, i);
-	if (!enforce_tagged_invariants(ctx, atype->loc, type)) {
-		*type = builtin_type_error;
-	}
-}
+	assert(atype->storage == STORAGE_TAGGED);
+	const struct ast_tagged_union_type *amemb = &atype->tagged;
+	type->tagged.types = NULL;
+	type->tagged.len = 0;
+	type->tagged.cap = 0;
+	for (; amemb; amemb = amemb->next) {
+		const struct type *memb =
+			type_store_lookup_atype(ctx, amemb->type);
+		if (!amemb->unwrap) {
+			tagged_append(&type->tagged, memb);
+			continue;
+		}
 
-static struct dimensions
-_tagged_size(struct context *ctx, const struct ast_tagged_union_type *u)
-{
-	struct dimensions dim = {0};
-	for (; u; u = u->next) {
-		struct dimensions memb = {0};
-		const struct type *type = NULL;
-		const struct ast_type *atype = u->type;
-		tagged_or_atagged_member(ctx, &atype, &type);
-		if (type != NULL && type->storage == STORAGE_TAGGED) {
-			for (const struct type_tagged_union *u = &type->tagged;
-					u; u = u->next) {
-				if (memb.size < u->type->size) {
-					memb.size = u->type->size;
-				}
-				if (memb.align < u->type->align) {
-					memb.align = u->type->align;
-				}
+		memb = type_dealias(ctx, memb);
+		if (memb->storage != STORAGE_TAGGED) {
+			if (memb->storage != STORAGE_INVALID) {
+				error(ctx, atype->loc, NULL,
+					"Can't reduce non-tagged-union type %s",
+					gen_typename(memb));
 			}
-		} else if (atype->storage == STORAGE_TAGGED) {
-			memb = _tagged_size(ctx, &atype->tagged);
-		} else {
-			memb = lookup_atype_with_dimensions(ctx, NULL, atype);
+			*type = builtin_type_invalid;
+			return;
 		}
-		if (memb.size == SIZE_UNDEFINED) {
-			error(ctx, atype->loc, NULL,
-				"Type of undefined size is not a valid tagged union member");
-			return (struct dimensions){0};
-		}
-		if (dim.size < memb.size) {
-			dim.size = memb.size;
-		}
-		if (dim.align < memb.align) {
-			dim.align = memb.align;
+		assert(memb->storage == STORAGE_TAGGED);
+		for (size_t i = 0; i < memb->tagged.len; i++) {
+			tagged_append(&type->tagged, memb->tagged.types[i]);
 		}
 	}
-	return dim;
-}
+	tagged_init(ctx, type, atype->loc, true);
 
-// compute the dimensions of an incomplete tagged union without completing it
-static struct dimensions
-tagged_size(struct context *ctx, const struct ast_type *atype)
-{
-	struct dimensions dim = _tagged_size(ctx, &atype->tagged);
-	if (dim.align < builtin_type_u32.align) {
-		dim.align = builtin_type_u32.align;
+	if (type->tagged.len <= 1) {
+		error(ctx, atype->loc, NULL,
+			"Tagged unions must have at least two distinct members");
+		*type = builtin_type_invalid;
 	}
-	dim.size += builtin_type_u32.size % dim.align + builtin_type_u32.align;
-	return dim;
 }
-
 
 static struct dimensions
 tuple_init_from_atype(struct context *ctx,
@@ -648,22 +523,22 @@ tuple_init_from_atype(struct context *ctx,
 	struct dimensions dim = {0};
 	while (atuple) {
 		struct dimensions memb = {0};
-		size_t offset = 0;
 		if (type) {
-			memb = lookup_atype_with_dimensions(ctx, &cur->type, atuple->type);
+			cur->type = type_store_lookup_atype(ctx, atuple->type);
+			memb = dim_from_type(cur->type);
 		} else {
-			memb = lookup_atype_with_dimensions(ctx, NULL, atuple->type);
+			memb = type_store_lookup_dimensions(ctx, atuple->type);
 		}
 		if (memb.size == SIZE_UNDEFINED) {
 			error(ctx, atype->loc, NULL,
 				"Type of undefined size is not a valid tuple member");
 			if (type) {
-				*type = builtin_type_error;
+				*type = builtin_type_invalid;
 			}
 			return (struct dimensions){0};
 		}
+		size_t offset = dim.size;
 		if (memb.align != 0) {
-			offset = dim.size;
 			if (dim.size % memb.align) {
 				offset += memb.align - dim.size % memb.align;
 			}
@@ -676,9 +551,7 @@ tuple_init_from_atype(struct context *ctx,
 
 		atuple = atuple->next;
 		if (type) {
-			if (memb.align != 0) {
-				cur->offset = offset;
-			}
+			cur->offset = offset;
 			if (atuple) {
 				cur->next = xcalloc(1, sizeof(struct type_tuple));
 				cur = cur->next;
@@ -692,14 +565,6 @@ tuple_init_from_atype(struct context *ctx,
 	return dim;
 }
 
-static void
-add_padding(size_t *size, size_t align)
-{
-	if (*size != SIZE_UNDEFINED && *size != 0 && *size % align != 0) {
-		*size += align - *size % align;
-	}
-}
-
 static bool
 default_param_from_atype(struct context *ctx,
 	const struct ast_function_parameters *aparam,
@@ -709,7 +574,7 @@ default_param_from_atype(struct context *ctx,
 	// updated later, so it cannot be on the stack.
 	struct expression *in = xcalloc(1, sizeof(struct expression));
 	check_expression(ctx, aparam->default_value, in, param->type);
-	if (in->result->storage == STORAGE_ERROR) {
+	if (in->result->storage == STORAGE_INVALID) {
 		return false;
 	}
 	if (!type_is_assignable(ctx, param->type, in->result)) {
@@ -752,18 +617,19 @@ type_init_from_atype(struct context *ctx,
 	}
 
 	type->storage = atype->storage;
-	type->flags = atype->flags;
 
 	struct scope_object *obj = NULL;
 	const struct type *builtin;
 	switch (type->storage) {
-	case STORAGE_ERROR:
+	case STORAGE_INVALID:
 	case STORAGE_FCONST:
 	case STORAGE_ICONST:
 	case STORAGE_RCONST:
 	case STORAGE_ENUM:
 	case STORAGE_NULL:
 		assert(0); // Invariant
+	case STORAGE_DONE:
+	case STORAGE_NEVER:
 	case STORAGE_BOOL:
 	case STORAGE_F32:
 	case STORAGE_F64:
@@ -772,7 +638,7 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_I32:
 	case STORAGE_I64:
 	case STORAGE_INT:
-	case STORAGE_NEVER:
+	case STORAGE_NOMEM:
 	case STORAGE_OPAQUE:
 	case STORAGE_RUNE:
 	case STORAGE_SIZE:
@@ -783,29 +649,46 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_U64:
 	case STORAGE_UINT:
 	case STORAGE_UINTPTR:
+	case STORAGE_UNDEFINED:
 	case STORAGE_VALIST:
 	case STORAGE_VOID:
-	case STORAGE_DONE:
 		builtin = builtin_type_for_storage(type->storage);
 		type->size = builtin->size;
 		type->align = builtin->align;
 		break;
+	case STORAGE_ERROR:;
+		struct dimensions dims = { 0 };
+		if (!size_only) {
+			type->error = type_store_lookup_atype(ctx, atype->error);
+			enum type_storage secondary = type_dealias(ctx, type->error)->storage;
+			if (secondary == STORAGE_DONE || secondary == STORAGE_NEVER) {
+				error(ctx, atype->loc, NULL,
+					"%s cannot be an error",
+					type_storage_unparse(secondary));
+				*type = builtin_type_invalid;
+				return (struct dimensions){0};
+			}
+			dims = dim_from_type(type->error);
+		} else {
+			dims = type_store_lookup_dimensions(ctx, atype->error);
+		}
+		type->size = dims.size;
+		type->align = dims.align;
+		break;
 	case STORAGE_ALIAS:
-		obj = scope_lookup(ctx->scope, &atype->alias);
+		obj = scope_lookup(ctx->scope, atype->alias);
 		if (!obj) {
-			char *ident = identifier_unparse(&atype->alias);
+			char *ident = ident_unparse(atype->alias);
 			error(ctx, atype->loc, NULL,
 				"Unresolvable identifier '%s'", ident);
 			free(ident);
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 
 		if (obj->otype == O_SCAN) {
 			// an incomplete declaration was encountered
-			struct incomplete_declaration *idecl =
-				(struct incomplete_declaration *)obj;
-			if (size_only && idecl->type == IDECL_DECL) {
+			if (size_only && obj->idecl->type == IDECL_DECL) {
 				wrap_resolver(ctx, obj, resolve_dimensions);
 				type->size = obj->type->size;
 				type->align = obj->type->align;
@@ -816,23 +699,20 @@ type_init_from_atype(struct context *ctx,
 		}
 
 		if (obj->otype != O_TYPE) {
-			char *ident = identifier_unparse(&obj->ident);
+			char *ident = ident_unparse(obj->ident);
 			error(ctx, atype->loc, NULL,
 				"Object '%s' is not a type", ident);
 			free(ident);
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 
 		type->storage = obj->type->storage;
 		if (obj->type->storage == STORAGE_ENUM) {
 			type->_enum = obj->type->_enum;
-		} else if (atype->unwrap) {
-			*type = *type_dealias(ctx, obj->type);
-			break;
 		}
-		identifier_dup(&type->alias.ident, &obj->ident);
-		identifier_dup(&type->alias.name, &obj->name);
+		type->alias.ident = obj->ident;
+		type->alias.name = obj->name;
 		type->alias.type = obj->type->alias.type;
 		type->alias.exported = obj->type->alias.exported;
 		type->size = obj->type->size;
@@ -842,26 +722,27 @@ type_init_from_atype(struct context *ctx,
 		type->array.length = ast_array_len(ctx, atype);
 		struct dimensions memb = {0};
 		if (size_only) {
-			memb = lookup_atype_with_dimensions(ctx,
-				NULL, atype->array.members);
+			memb = type_store_lookup_dimensions(ctx,
+				atype->array.members);
 		} else {
-			memb = lookup_atype_with_dimensions(ctx,
-				&type->array.members, atype->array.members);
-			if (type->array.members->storage == STORAGE_ERROR) {
-				*type = builtin_type_error;
+			type->array.members = type_store_lookup_atype(ctx,
+				atype->array.members);
+			memb = dim_from_type(type->array.members);
+			if (type->array.members->storage == STORAGE_INVALID) {
+				*type = builtin_type_invalid;
 				return (struct dimensions){0};
 			}
 		}
 		if (memb.size == 0) {
 			error(ctx, atype->loc, NULL,
 				"Type of size 0 is not a valid array member");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (memb.size == SIZE_UNDEFINED) {
 			error(ctx, atype->loc, NULL,
 				"Type of undefined size is not a valid array member");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 
@@ -878,25 +759,26 @@ type_init_from_atype(struct context *ctx,
 		if (size_only) {
 			break;
 		}
-		type->func.result = lookup_atype(ctx, atype->func.result);
+		type->func.result = type_store_lookup_atype(ctx,
+				atype->func.result);
 		type->func.variadism = atype->func.variadism;
 		struct type_func_param *param, **next = &type->func.params;
 		bool has_optional = false;
 		for (struct ast_function_parameters *aparam = atype->func.params;
 				aparam; aparam = aparam->next) {
 			param = *next = xcalloc(1, sizeof(struct type_func_param));
-			param->type = lookup_atype(ctx, aparam->type);
+			param->type = type_store_lookup_atype(ctx, aparam->type);
 			if (param->type->size == SIZE_UNDEFINED) {
 				error(ctx, atype->loc, NULL,
 					"Function parameter types must have defined size");
-				*type = builtin_type_error;
+				*type = builtin_type_invalid;
 				return (struct dimensions){0};
 			}
 			if (aparam->default_value != NULL) {
 				has_optional = true;
 				if (!default_param_from_atype(ctx,
 						aparam, param)) {
-					*type = builtin_type_error;
+					*type = builtin_type_invalid;
 					return (struct dimensions){0};
 				}
 			} else if (atype->func.variadism == VARIADISM_HARE
@@ -906,7 +788,7 @@ type_init_from_atype(struct context *ctx,
 			} else if (has_optional) {
 				error(ctx, atype->loc, NULL,
 					"Required function parameter may not follow optional parameters");
-				*type = builtin_type_error;
+				*type = builtin_type_invalid;
 				return (struct dimensions){0};
 			}
 			next = &param->next;
@@ -918,23 +800,23 @@ type_init_from_atype(struct context *ctx,
 		if (size_only) {
 			break;
 		}
-		type->pointer.flags = atype->pointer.flags;
-		type->pointer.referent = lookup_atype(
+		type->pointer.nullable = atype->pointer.nullable;
+		type->pointer.referent = type_store_lookup_atype(
 			ctx, atype->pointer.referent);
-		if (type->pointer.referent->storage == STORAGE_ERROR) {
-			*type = builtin_type_error;
+		if (type->pointer.referent->storage == STORAGE_INVALID) {
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->pointer.referent->size == 0) {
 			error(ctx, atype->loc, NULL,
 				"Can't have pointer to zero-sized type");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->pointer.referent->storage == STORAGE_NEVER) {
 			error(ctx, atype->loc, NULL,
 				"Can't have pointer to never");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		break;
@@ -945,21 +827,22 @@ type_init_from_atype(struct context *ctx,
 		if (size_only) {
 			break;
 		}
-		type->array.members = lookup_atype(ctx, atype->slice.members);
-		if (type->array.members->storage == STORAGE_ERROR) {
-			*type = builtin_type_error;
+		type->array.members = type_store_lookup_atype(ctx,
+				atype->slice.members);
+		if (type->array.members->storage == STORAGE_INVALID) {
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->array.members->size == 0) {
 			error(ctx, atype->loc, NULL,
 				"Type of size 0 is not a valid slice member");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		if (type->array.members->storage == STORAGE_NEVER) {
 			error(ctx, atype->loc, NULL,
 				"never is not a valid slice member");
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
 		}
 		type->array.length = SIZE_UNDEFINED;
@@ -967,18 +850,23 @@ type_init_from_atype(struct context *ctx,
 	case STORAGE_STRUCT:
 	case STORAGE_UNION:
 		if (!struct_init_from_atype(ctx, type, atype, size_only)) {
-			*type = builtin_type_error;
+			*type = builtin_type_invalid;
 			return (struct dimensions){0};
+		}
+		if (type->storage == STORAGE_UNION || !type->struct_union.packed) {
+			add_padding(&type->size, type->align);
 		}
 		break;
 	case STORAGE_TAGGED:
 		if (size_only) {
-			struct dimensions tagged = tagged_size(ctx, atype);
-			type->size = tagged.size;
-			type->align = tagged.align;
+			struct dimensions dims =
+				tagged_size(ctx, &atype->tagged);
+			type->size = dims.size;
+			type->align = dims.align;
 		} else {
 			tagged_init_from_atype(ctx, type, atype);
 		}
+		add_padding(&type->size, type->align);
 		break;
 	case STORAGE_TUPLE:
 		if (size_only) {
@@ -989,27 +877,14 @@ type_init_from_atype(struct context *ctx,
 		} else {
 			tuple_init_from_atype(ctx, type, atype);
 		}
+		add_padding(&type->size, type->align);
 		break;
 	}
-
-	struct dimensions dim = {
-		.size = type->size,
-		.align = type->align,
-	};
-	if (type->storage != STORAGE_STRUCT || !type->struct_union.packed) {
-		// padding an alias can only break packed structs
-		if (type->storage != STORAGE_ALIAS) {
-			add_padding(&dim.size, dim.align);
-		}
-	}
-	return dim;
+	return dim_from_type(type);
 }
 
 static const struct type *
-_type_store_lookup_type(
-	struct context *ctx,
-	const struct type *type,
-	const struct dimensions *dims)
+type_store_lookup_type(struct context *ctx, const struct type *type)
 {
 	const struct type *builtin = builtin_for_type(type);
 	if (builtin) {
@@ -1023,12 +898,16 @@ _type_store_lookup_type(
 	while (*next) {
 		bucket = *next;
 		if (bucket->type.id == hash) {
+			if (!type_equal(&bucket->type, type)) {
+				next = &bucket->next;
+				continue;
+			}
 			if (bucket->type.storage == STORAGE_ALIAS) {
 				type = type->alias.type;
 				bucket->type.alias.type = type;
-				if (type && type->storage == STORAGE_ERROR) {
-					return &builtin_type_error;
-				}
+				if (type && type->storage == STORAGE_INVALID) {
+					return &builtin_type_invalid;
+			}
 			}
 			return &bucket->type;
 		}
@@ -1038,51 +917,7 @@ _type_store_lookup_type(
 	bucket = *next = xcalloc(1, sizeof(struct type_bucket));
 	bucket->type = *type;
 	bucket->type.id = hash;
-
-	if (dims == NULL) {
-		add_padding(&bucket->type.size, type->align);
-	}
-
 	return &bucket->type;
-}
-
-static const struct type *
-type_store_lookup_type(struct context *ctx, const struct type *type)
-{
-	if (type->storage != STORAGE_ALIAS) {
-		return _type_store_lookup_type(ctx, type, NULL);
-	}
-	// References to type aliases always inherit the flags that the
-	// alias was defined with
-	struct type psuedotype = *type;
-	const struct scope_object *obj = scope_lookup(
-		ctx->scope, &type->alias.name);
-	psuedotype.flags |= obj->type->flags;
-	return type_store_lookup_alias(ctx, &psuedotype, NULL);
-}
-
-static struct dimensions
-lookup_atype_with_dimensions(struct context *ctx,
-	const struct type **type,
-	const struct ast_type *atype)
-{
-	struct type temp = {0};
-	struct dimensions dim = {0};
-	if (type) {
-		dim = type_init_from_atype(ctx, &temp, atype);
-		*type = type_store_lookup_type(ctx, &temp);
-	} else {
-		dim = type_init_from_atype(ctx, NULL, atype);
-	}
-	return dim;
-}
-
-static const struct type *
-lookup_atype(struct context *ctx, const struct ast_type *atype)
-{
-	const struct type *type = NULL;
-	lookup_atype_with_dimensions(ctx, &type, atype);
-	return type;
 }
 
 const struct type *
@@ -1091,7 +926,9 @@ type_store_lookup_atype(struct context *ctx, const struct ast_type *atype)
 	if (atype->storage == STORAGE_NULL) {
 		return &builtin_type_null;
 	}
-	return lookup_atype(ctx, atype);
+	struct type temp = {0};
+	type_init_from_atype(ctx, &temp, atype);
+	return type_store_lookup_type(ctx, &temp);
 }
 
 // Compute dimensions of an incomplete type without completing it
@@ -1102,35 +939,23 @@ type_store_lookup_dimensions(struct context *ctx, const struct ast_type *atype)
 }
 
 const struct type *
-type_store_lookup_with_flags(struct context *ctx,
-	const struct type *type, unsigned int flags)
-{
-	if (type->flags == flags) {
-		return type;
-	}
-	struct type new = *type;
-	new.flags = flags;
-	return _type_store_lookup_type(ctx, &new, NULL);
-}
-
-const struct type *
 type_store_lookup_pointer(struct context *ctx, struct location loc,
-	const struct type *referent, unsigned int ptrflags)
+	const struct type *referent, bool nullable)
 {
-	if (referent->storage == STORAGE_ERROR) {
-		return &builtin_type_error;
+	if (referent->storage == STORAGE_INVALID) {
+		return &builtin_type_invalid;
 	}
 	if (referent->storage == STORAGE_NULL) {
 		error(ctx, loc, NULL, "Null type not allowed in this context");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	if (referent->size == 0) {
 		error(ctx, loc, NULL, "Can't have pointer to zero-sized type");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	if (referent->storage == STORAGE_NEVER) {
 		error(ctx, loc, NULL, "Can't have pointer to never");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	referent = lower_flexible(ctx, referent, NULL);
 
@@ -1138,7 +963,7 @@ type_store_lookup_pointer(struct context *ctx, struct location loc,
 		.storage = STORAGE_POINTER,
 		.pointer = {
 			.referent = referent,
-			.flags = ptrflags,
+			.nullable = nullable,
 		},
 		.size = builtin_type_uintptr.size,
 		.align = builtin_type_uintptr.align,
@@ -1150,23 +975,23 @@ const struct type *
 type_store_lookup_array(struct context *ctx, struct location loc,
 	const struct type *members, size_t len, bool expandable)
 {
-	if (members->storage == STORAGE_ERROR) {
-		return &builtin_type_error;
+	if (members->storage == STORAGE_INVALID) {
+		return &builtin_type_invalid;
 	}
 	if (members->storage == STORAGE_NULL) {
 		error(ctx, loc, NULL, "Null type not allowed in this context");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	members = lower_flexible(ctx, members, NULL);
 	if (members->size == 0) {
 		error(ctx, loc, NULL,
 			"Type of size 0 is not a valid array member");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	if (members->size == SIZE_UNDEFINED) {
 		error(ctx, loc, NULL,
 			"Type of undefined size is not a valid member of a bounded array");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	assert(members->align != 0);
 	assert(members->align != ALIGN_UNDEFINED);
@@ -1190,18 +1015,18 @@ const struct type *
 type_store_lookup_slice(struct context *ctx, struct location loc,
 	const struct type *members)
 {
-	if (members->storage == STORAGE_ERROR) {
-		return &builtin_type_error;
+	if (members->storage == STORAGE_INVALID) {
+		return &builtin_type_invalid;
 	}
 	if (members->storage == STORAGE_NULL) {
 		error(ctx, loc, NULL, "Null type not allowed in this context");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	members = lower_flexible(ctx, members, NULL);
 	if (members->size == 0) {
 		error(ctx, loc, NULL,
 			"Type of size 0 is not a valid slice member");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	assert(members->align != 0);
 
@@ -1218,42 +1043,44 @@ type_store_lookup_slice(struct context *ctx, struct location loc,
 }
 
 const struct type *
-type_store_lookup_alias(struct context *ctx,
-		const struct type *type,
-		const struct dimensions *dims)
-{
-	return _type_store_lookup_type(ctx, type, dims);
-}
-
-
-// Sorts members by id and deduplicates entries. Does not enforce usual tagged
-// union invariants. The returned type is not a singleton.
-static const struct type *
-lookup_tagged(struct context *ctx, struct type_tagged_union *tags)
+type_store_lookup_alias(struct context *ctx, struct ident *ident,
+	struct ident *name, const struct type *secondary, bool exported)
 {
 	struct type type = {
-		.storage = STORAGE_TAGGED,
+		.storage = STORAGE_ALIAS,
+		.alias.type = secondary,
+		.alias.ident = ident,
+		.alias.name = name,
+		.alias.exported = exported,
 	};
-	size_t nmemb = sum_tagged_memb(ctx, tags);
-	struct type_tagged_union **tu =
-		xcalloc(nmemb, sizeof(struct type_tagged_union *));
-	size_t i = 0;
-	collect_tagged_memb(ctx, tu, tags, &i);
-	tagged_init(&type, tu, nmemb);
-	struct type *ret = xcalloc(1, sizeof(struct type));
-	*ret = type;
+	return type_store_lookup_type(ctx, &type);
+}
+
+static struct type
+lookup_tagged(struct context *ctx, struct location loc,
+		struct type_tagged_union *tagged, bool valid)
+{
+	struct type ret = {
+		.storage = STORAGE_TAGGED,
+		.tagged = tagged_dup_tags(tagged),
+	};
+	tagged_init(ctx, &ret, loc, valid);
 	return ret;
 }
 
 const struct type *
 type_store_lookup_tagged(struct context *ctx, struct location loc,
-		struct type_tagged_union *tags)
+		struct type_tagged_union *tagged)
 {
-	const struct type *type = lookup_tagged(ctx, tags);
-	if (!enforce_tagged_invariants(ctx, loc, type)) {
-		return &builtin_type_error;
+	struct type temp = lookup_tagged(ctx, loc, tagged, true);
+	switch (temp.tagged.len) {
+	case 0:
+		return &builtin_type_never;
+	case 1:
+		return temp.tagged.types[0];
+	default:
+		return type_store_lookup_type(ctx, &temp);
 	}
-	return type_store_lookup_type(ctx, type);
 }
 
 const struct type *
@@ -1264,34 +1091,35 @@ type_store_lookup_tuple(struct context *ctx, struct location loc,
 		.storage = STORAGE_TUPLE,
 	};
 	for (struct type_tuple *t = values; t; t = t->next) {
-		if (t->type->storage == STORAGE_ERROR) {
-			return &builtin_type_error;
+		if (t->type->storage == STORAGE_INVALID) {
+			return &builtin_type_invalid;
 		}
 		if (t->type->storage == STORAGE_NULL) {
 			error(ctx, loc, NULL,
 				"Null type not allowed in this context");
-			return &builtin_type_error;
+			return &builtin_type_invalid;
 		}
 		t->type = lower_flexible(ctx, t->type, NULL);
 		if (t->type->size == SIZE_UNDEFINED) {
 			error(ctx, loc, NULL,
 				"Type of undefined size is not a valid tuple member");
-			return &builtin_type_error;
+			return &builtin_type_invalid;
 		}
 		assert(t->type->align != ALIGN_UNDEFINED);
 
 		if (t->type->align > type.align) {
 			type.align = t->type->align;
 		}
+		t->offset = type.size;
 		if (t->type->align != 0) {
-			t->offset = type.size;
-			if (type.size % t->type->align) {
+			if (type.size % t->type->align != 0) {
 				t->offset += t->type->align - type.size % t->type->align;
 			}
 			type.size = t->offset + t->type->size;
 		}
 	}
 	type.tuple = *values;
+	add_padding(&type.size, type.align);
 	return type_store_lookup_type(ctx, &type);
 }
 
@@ -1301,20 +1129,31 @@ type_store_lookup_enum(struct context *ctx, const struct ast_type *atype,
 {
 	struct type type = {0};
 	type.storage = STORAGE_ENUM;
-	type.flags = atype->flags;
-	mkident(ctx, &type.alias.ident, &atype->alias, NULL);
-	identifier_dup(&type.alias.name, &atype->alias);
+	type.alias.ident = mkident(ctx, atype->alias, NULL);
+	type.alias.name = atype->alias;
 	type.alias.exported = exported;
 	type.alias.type = builtin_type_for_storage(atype->_enum.storage);
 	if (!type_is_integer(ctx, type.alias.type)
 			&& type.alias.type->storage != STORAGE_RUNE) {
 		error(ctx, atype->loc, NULL,
 			"Enum storage must be an integer or rune");
-		return &builtin_type_error;
+		return &builtin_type_invalid;
 	}
 	type.size = type.alias.type->size;
 	type.align = type.alias.type->size;
 	return type_store_lookup_type(ctx, &type);
+}
+
+static void
+expand_tagged(struct type_tagged_union *out, const struct type_tagged_union *in)
+{
+	for (size_t i = 0; i < in->len; i++) {
+		if (in->types[i]->storage == STORAGE_TAGGED) {
+			expand_tagged(out, &in->types[i]->tagged);
+		} else {
+			tagged_append(out, in->types[i]);
+		}
+	}
 }
 
 // Algorithm:
@@ -1332,86 +1171,74 @@ const struct type *
 type_store_reduce_result(struct context *ctx, struct location loc,
 		struct type_tagged_union *in)
 {
-	if (!in) {
+	if (!in || in->len == 0) {
 		return &builtin_type_never;
-	} else if (!in->next) {
-		return in->type;
+	} else if (in->len == 1) {
+		return in->types[0];
 	}
 
-	const struct type *type = lookup_tagged(ctx, in);
-	struct type_tagged_union _in = type->tagged;
-	in = &_in;
+	struct type_tagged_union expanded = { .types = NULL };
+	expand_tagged(&expanded, in);
+	struct type type = lookup_tagged(ctx, loc, &expanded, false);
 
-	struct type_tagged_union **null = NULL;
-	struct type_tagged_union *ptr = NULL;
-	bool multiple_ptrs = false;
-	struct type_tagged_union **tu = &in;
-	while (*tu != NULL) {
-		struct type_tagged_union *i = *tu;
-		bool dropped = false;
-		const struct type *it = i->type;
-
-		if (it->storage == STORAGE_NEVER || it->storage == STORAGE_ERROR) {
-			*tu = i->next;
+	size_t ptr_index = 0;
+	size_t nptrs = 0;
+	bool have_null = false;
+	size_t new_len = 0;
+	for (size_t i = 0; i < type.tagged.len; i++) {
+		const struct type *memb = type.tagged.types[i];
+		if (memb->storage == STORAGE_NEVER || memb->storage == STORAGE_INVALID) {
 			continue;
 		}
-
-		for (struct type_tagged_union *j = in; j != i; j = j->next) {
-			const struct type *jt = j->type;
-			assert(it->id != jt->id);
-			if (it->storage != STORAGE_POINTER
-					|| jt->storage != STORAGE_POINTER) {
+		if (memb->storage == STORAGE_NULL) {
+			have_null = true;
+			continue;
+		}
+		if (memb->storage != STORAGE_POINTER) {
+			type.tagged.types[new_len++] = memb;
+			continue;
+		}
+		bool drop = false;
+		for (size_t j = 0; j < i; j++) {
+			const struct type *other = type.tagged.types[j];
+			if (other->storage != STORAGE_POINTER) {
 				continue;
 			}
-			if (it->pointer.referent->id != jt->pointer.referent->id) {
+			// XXX: Why are we comparing IDs here?
+			if (memb->pointer.referent->id != other->pointer.referent->id) {
 				continue;
 			}
-			if (it->flags != jt->flags) {
+			if (!memb->pointer.nullable && !other->pointer.nullable) {
 				continue;
 			}
-			if ((it->pointer.flags & PTR_NULLABLE)
-					|| (jt->pointer.flags & PTR_NULLABLE)) {
-				it = type_store_lookup_pointer(ctx, loc,
-					it->pointer.referent, PTR_NULLABLE);
-				jt = type_store_lookup_pointer(ctx, loc,
-					jt->pointer.referent, PTR_NULLABLE);
-				if (it == jt) {
-					dropped = true;
-					*tu = i->next;
-					j->type = jt;
-					break;
-				}
+			const struct type *_memb = type_store_lookup_pointer(ctx,
+				loc, memb->pointer.referent, true);
+			other = type_store_lookup_pointer(ctx, loc,
+				other->pointer.referent, true);
+			if (_memb == other) {
+				type.tagged.types[j] = other;
+				drop = true;
+				break;
 			}
 		}
-
-		if (i->type->storage == STORAGE_NULL) {
-			null = tu;
-		}
-		if (!dropped) {
-			if (i->type->storage == STORAGE_POINTER) {
-				if (ptr != NULL) {
-					multiple_ptrs = true;
-				}
-				ptr = i;
-			}
-			tu = &i->next;
+		if (!drop) {
+			ptr_index = new_len;
+			type.tagged.types[new_len++] = memb;
+			nptrs++;
 		}
 	}
+	type.tagged.len = new_len;
 
-	if (null != NULL && (multiple_ptrs || ptr == NULL)) {
-		return NULL;
+	if (have_null) {
+		if (nptrs != 1) {
+			error(ctx, loc, NULL,
+				"Invalid result type (dangling or ambiguous null)");
+			return &builtin_type_invalid;
+		}
+		// XXX: Flags?
+		type.tagged.types[ptr_index] = type_store_lookup_pointer(ctx, loc,
+			type.tagged.types[ptr_index]->pointer.referent, true);
 	}
 
-	if (null != NULL && ptr != NULL) {
-		*null = (*null)->next;
-		ptr->type = type_store_lookup_pointer(ctx, loc,
-			ptr->type->pointer.referent, PTR_NULLABLE);
-	}
-
-	if (in == NULL) {
-		return &builtin_type_never;
-	} else if (in->next == NULL) {
-		return in->type;
-	}
-	return type_store_lookup_tagged(ctx, loc, in);
+	return type_store_lookup_tagged(ctx, loc, &type.tagged);
 }
